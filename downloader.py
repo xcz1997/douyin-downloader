@@ -472,7 +472,7 @@ class UnifiedDownloader:
     async def _fetch_video_info(self, video_id: str) -> Optional[Dict]:
         """获取视频信息"""
         try:
-            # 直接使用 DouYinCommand.py 中成功的 Douyin 类
+            # 使用 Douyin 类
             from apiproxy.douyin.douyin import Douyin
             
             # 创建 Douyin 实例
@@ -888,7 +888,7 @@ class UnifiedDownloader:
     async def _fetch_user_posts(self, user_id: str, cursor: int = 0) -> Optional[Dict]:
         """获取用户作品列表"""
         try:
-            # 直接使用 Douyin 类的 getUserInfo 方法，就像 DouYinCommand.py 那样
+            # 使用 Douyin 类的 getUserInfo 方法
             from apiproxy.douyin.douyin import Douyin
             
             # 创建 Douyin 实例

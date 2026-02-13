@@ -1,23 +1,16 @@
 # 抖音下载器 - 无水印批量下载工具
 
-![douyin-downloader](https://socialify.git.ci/jiji262/douyin-downloader/image?custom_description=%E6%8A%96%E9%9F%B3%E6%89%B9%E9%87%8F%E4%B8%8B%E8%BD%BD%E5%B7%A5%E5%85%B7%EF%BC%8C%E5%8E%BB%E6%B0%B4%E5%8D%B0%EF%BC%8C%E6%94%AF%E6%8C%81%E8%A7%86%E9%A2%91%E3%80%81%E5%9B%BE%E9%9B%86%E3%80%81%E5%90%88%E9%9B%86%E3%80%81%E9%9F%B3%E4%B9%90%28%E5%8E%9F%E5%A3%B0%29%E3%80%82%0A%E5%85%8D%E8%B4%B9%EF%BC%81%E5%85%8D%E8%B4%B9%EF%BC%81%E5%85%8D%E8%B4%B9%EF%BC%81&description=1&font=Jost&forks=1&logo=https%3A%2F%2Fraw.githubusercontent.com%2Fjiji262%2Fdouyin-downloader%2Frefs%2Fheads%2Fmain%2Fimg%2Flogo.png&name=1&owner=1&pattern=Circuit+Board&pulls=1&stargazers=1&theme=Light)
-
-一个功能强大的抖音内容批量下载工具，支持视频、图集、音乐、直播等多种内容类型的下载。提供两个版本：V1.0（稳定版）和 V2.0（增强版）。
+一个功能强大的抖音内容批量下载工具，支持视频、图集、音乐、直播等多种内容类型的下载。
 
 ## 📋 目录
 
 - [快速开始](#-快速开始)
-- [版本说明](#-版本说明)
-- [V1.0 使用指南](#-v10-使用指南)
-- [V2.0 使用指南](#-v20-使用指南)
+- [使用指南](#-使用指南)
 - [Cookie 配置工具](#-cookie-配置工具)
 - [支持的链接类型](#-支持的链接类型)
 - [常见问题](#-常见问题)
-- [更新日志](#-更新日志)
 
 ## ⚡ 快速开始
-
-![qun](./img/fuye.jpg)
 
 ### 环境要求
 
@@ -28,7 +21,7 @@
 
 1. **克隆项目**
 ```bash
-git clone https://github.com/jiji262/douyin-downloader.git
+git clone https://github.com/xcz1997/douyin-downloader.git
 cd douyin-downloader
 ```
 
@@ -46,104 +39,7 @@ python cookie_extractor.py
 python get_cookies_manual.py
 ```
 
-## 📦 版本说明
-
-### V1.0 (DouYinCommand.py) - 稳定版
-- ✅ **经过验证**：稳定可靠，经过大量测试
-- ✅ **简单易用**：配置文件驱动，使用简单
-- ✅ **功能完整**：支持所有内容类型下载
-- ✅ **单个视频下载**：完全正常工作
-- ⚠️ **需要手动配置**：需要手动获取和配置 Cookie
-
-### V2.0 (downloader.py) - 增强版
-- 🚀 **自动 Cookie 管理**：支持自动获取和刷新 Cookie
-- 🚀 **统一入口**：整合所有功能到单一脚本
-- 🚀 **异步架构**：性能更优，支持并发下载
-- 🚀 **智能重试**：自动重试和错误恢复
-- 🚀 **增量下载**：支持增量更新，避免重复下载
-- ⚠️ **单个视频下载**：目前 API 返回空响应（已知问题）
-- ✅ **用户主页下载**：完全正常工作
-
-## 🎯 V1.0 使用指南
-
-### 配置文件设置
-
-1. **编辑配置文件**
-```bash
-cp config.example.yml config.yml
-# 编辑 config.yml 文件
-```
-
-2. **配置示例**
-```yaml
-# 下载链接
-link:
-  - https://v.douyin.com/xxxxx/                    # 单个视频
-  - https://www.douyin.com/user/xxxxx              # 用户主页
-  - https://www.douyin.com/collection/xxxxx        # 合集
-
-# 保存路径
-path: ./Downloaded/
-
-# Cookie配置（必填）
-cookies:
-  msToken: YOUR_MS_TOKEN_HERE
-  ttwid: YOUR_TTWID_HERE
-  odin_tt: YOUR_ODIN_TT_HERE
-  passport_csrf_token: YOUR_PASSPORT_CSRF_TOKEN_HERE
-  sid_guard: YOUR_SID_GUARD_HERE
-
-# 下载选项
-music: True    # 下载音乐
-cover: True    # 下载封面
-avatar: True   # 下载头像
-json: True     # 保存JSON数据
-
-# 下载模式
-mode:
-  - post       # 下载发布的作品
-  # - like     # 下载喜欢的作品
-  # - mix      # 下载合集
-
-# 下载数量（0表示全部）
-number:
-  post: 0      # 发布作品数量
-  like: 0      # 喜欢作品数量
-  allmix: 0    # 合集数量
-  mix: 0       # 单个合集内作品数量
-
-# 其他设置
-thread: 5      # 下载线程数
-database: True # 使用数据库记录
-```
-
-### 运行程序
-
-```bash
-# 使用配置文件运行
-python DouYinCommand.py
-
-# 或者使用命令行参数
-python DouYinCommand.py --cmd False
-```
-
-### 使用示例
-
-```bash
-# 下载单个视频
-# 在 config.yml 中设置 link 为单个视频链接
-python DouYinCommand.py
-
-# 下载用户主页
-# 在 config.yml 中设置 link 为用户主页链接
-python DouYinCommand.py
-
-# 下载合集
-# 在 config.yml 中设置 link 为合集链接
-python DouYinCommand.py
-```
-
-## 🚀 V2.0 使用指南
+## 🚀 使用指南
 
 ### 命令行使用
 
@@ -321,51 +217,27 @@ python cookie_extractor.py
 
 ## 🔧 常见问题
 
-### Q: 为什么单个视频下载失败？
-**A**: 
-- V1.0：请检查 Cookie 是否有效，确保包含必要的字段
-- V2.0：目前已知问题，API 返回空响应，建议使用用户主页下载
-
 ### Q: Cookie 过期怎么办？
-**A**: 
+**A**:
 - 使用 `python cookie_extractor.py` 重新获取
 - 或使用 `python get_cookies_manual.py` 手动获取
 
 ### Q: 下载速度慢怎么办？
-**A**: 
+**A**:
 - 调整 `thread` 参数增加并发数
 - 检查网络连接
 - 避免同时下载过多内容
 
 ### Q: 如何批量下载？
-**A**: 
-- V1.0：在 `config.yml` 中添加多个链接
-- V2.0：使用命令行传入多个链接或使用配置文件
+**A**:
+- 使用命令行传入多个链接或使用配置文件
 
 ### Q: 支持哪些格式？
-**A**: 
+**A**:
 - 视频：MP4 格式（无水印）
 - 图片：JPG 格式
 - 音频：MP3 格式
 - 数据：JSON 格式
-
-## 📝 更新日志
-
-### V2.0 (2025-08)
-- ✅ **统一入口**：整合所有功能到 `downloader.py`
-- ✅ **自动 Cookie 管理**：支持自动获取和刷新
-- ✅ **异步架构**：性能优化，支持并发下载
-- ✅ **智能重试**：自动重试和错误恢复
-- ✅ **增量下载**：支持增量更新
-- ✅ **用户主页下载**：完全正常工作
-- ⚠️ **单个视频下载**：API 返回空响应（已知问题）
-
-### V1.0 (2024-12)
-- ✅ **稳定可靠**：经过大量测试验证
-- ✅ **功能完整**：支持所有内容类型
-- ✅ **单个视频下载**：完全正常工作
-- ✅ **配置文件驱动**：简单易用
-- ✅ **数据库支持**：记录下载历史
 
 ## ⚖️ 法律声明
 
@@ -374,30 +246,6 @@ python cookie_extractor.py
 - 不得用于商业用途或侵犯他人权益
 - 下载内容请尊重原作者版权
 
-## 🤝 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-### 报告问题
-- 使用 [Issues](https://github.com/jiji262/douyin-downloader/issues) 报告 bug
-- 请提供详细的错误信息和复现步骤
-
-### 功能建议
-- 在 Issues 中提出新功能建议
-- 详细描述功能需求和使用场景
-
 ## 📄 许可证
 
 本项目采用 [MIT License](LICENSE) 开源许可证。
-
----
-
-<div align="center">
-
-**如果这个项目对你有帮助，请给个 ⭐ Star 支持一下！**
-
-[🐛 报告问题](https://github.com/jiji262/douyin-downloader/issues) • [💡 功能建议](https://github.com/jiji262/douyin-downloader/issues) • [📖 查看文档](https://github.com/jiji262/douyin-downloader/wiki)
-
-Made with ❤️ by [jiji262](https://github.com/jiji262)
-
-</div>
