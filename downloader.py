@@ -247,10 +247,10 @@ class UnifiedDownloader:
         # 未能获取Cookie则不设置，使用默认headers
     
     def detect_content_type(self, url: str) -> ContentType:
-        """检测URL内容类型"""
-        if '/user/' in url:
+        """检测URL内容类型（应在短链接解析后调用）"""
+        if '/user/' in url or '/share/user/' in url:
             return ContentType.USER
-        elif '/video/' in url or 'v.douyin.com' in url:
+        elif '/video/' in url:
             return ContentType.VIDEO
         elif '/note/' in url:
             return ContentType.IMAGE
@@ -260,6 +260,8 @@ class UnifiedDownloader:
             return ContentType.MUSIC
         elif 'live.douyin.com' in url:
             return ContentType.LIVE
+        elif 'v.douyin.com' in url:
+            return ContentType.VIDEO  # 短链接未解析时的回退
         else:
             return ContentType.VIDEO  # 默认当作视频
     
@@ -406,7 +408,13 @@ class UnifiedDownloader:
         try:
             # 解析短链接
             url = await self.resolve_short_url(url)
-            
+
+            # 解析后重新检测类型，短链接可能指向用户主页
+            resolved_type = self.detect_content_type(url)
+            if resolved_type == ContentType.USER:
+                logger.info(f"短链接实际指向用户主页，转为用户下载: {url}")
+                return await self.download_user_page(url)
+
             # 提取ID
             video_id = self.extract_id_from_url(url, ContentType.VIDEO)
             if not video_id:
@@ -591,23 +599,31 @@ class UnifiedDownloader:
                 # 下载图文（无水印）
                 images = video_info.get('images', [])
                 for i, img in enumerate(images):
-                    img_url = self._get_best_quality_url(img.get('url_list', []))
+                    url_list = img.get('url_list', [])
+                    img_url = self._get_best_quality_url(url_list)
                     if img_url:
                         file_path = save_dir / f"image_{i+1}.jpg"
-                        if await self._download_file(img_url, file_path):
+                        if await self._download_file(img_url, file_path, fallback_urls=url_list):
                             logger.info(f"下载图片 {i+1}/{len(images)}: {file_path.name}")
                         else:
                             success = False
+                        await asyncio.sleep(0.3)  # 避免请求过快被限流
             else:
                 # 下载视频（无水印）
                 video_url = self._get_no_watermark_url(video_info)
                 if video_url:
+                    # 收集所有可用的视频URL作为备选
+                    video_fallbacks = []
+                    for key in ('play_addr', 'play_addr_h264', 'download_addr'):
+                        addr = video_info.get('video', {}).get(key)
+                        if addr and addr.get('url_list'):
+                            video_fallbacks.extend(addr['url_list'])
                     file_path = save_dir / f"{folder_name}.mp4"
-                    if await self._download_file(video_url, file_path):
+                    if await self._download_file(video_url, file_path, fallback_urls=video_fallbacks):
                         logger.info(f"下载视频: {file_path.name}")
                     else:
                         success = False
-                
+
                 # 下载音频
                 if self.config.get('music', True):
                     music_url = self._get_music_url(video_info)
@@ -617,10 +633,11 @@ class UnifiedDownloader:
             
             # 下载封面
             if self.config.get('cover', True):
+                cover_urls = video_info.get('video', {}).get('cover', {}).get('url_list', [])
                 cover_url = self._get_cover_url(video_info)
                 if cover_url:
                     file_path = save_dir / f"{folder_name}_cover.jpg"
-                    await self._download_file(cover_url, file_path)
+                    await self._download_file(cover_url, file_path, fallback_urls=cover_urls)
             
             # 保存JSON数据
             if self.config.get('json', True):
@@ -695,24 +712,43 @@ class UnifiedDownloader:
         except:
             return None
     
-    async def _download_file(self, url: str, save_path: Path) -> bool:
-        """下载文件"""
+    async def _download_file(self, url: str, save_path: Path, fallback_urls: List[str] = None) -> bool:
+        """下载文件，支持备选URL重试"""
         try:
             if save_path.exists():
                 logger.info(f"文件已存在，跳过: {save_path.name}")
                 return True
-            
+
+            # 构建候选URL列表：主URL + 备选URL
+            urls_to_try = [url]
+            if fallback_urls:
+                urls_to_try.extend(u for u in fallback_urls if u != url)
+
+            # 下载用的headers去掉referer，部分CDN会拦截
+            dl_headers = {k: v for k, v in self.headers.items() if k.lower() != 'referer'}
+
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=self.headers) as response:
-                    if response.status == 200:
-                        content = await response.read()
-                        with open(save_path, 'wb') as f:
-                            f.write(content)
-                        return True
-                    else:
-                        logger.error(f"下载失败，状态码: {response.status}")
-                        return False
-                        
+                for try_url in urls_to_try:
+                    try:
+                        async with session.get(try_url, headers=dl_headers) as response:
+                            if response.status == 200:
+                                content = await response.read()
+                                with open(save_path, 'wb') as f:
+                                    f.write(content)
+                                return True
+                            elif response.status == 403 and try_url != urls_to_try[-1]:
+                                logger.warning(f"下载返回403，尝试备选URL")
+                                await asyncio.sleep(0.5)
+                                continue
+                            else:
+                                logger.error(f"下载失败，状态码: {response.status}")
+                    except Exception as e:
+                        logger.warning(f"下载异常: {e}")
+                        if try_url != urls_to_try[-1]:
+                            continue
+
+            return False
+
         except Exception as e:
             logger.error(f"下载文件失败 {url}: {e}")
             return False
@@ -765,7 +801,24 @@ class UnifiedDownloader:
         downloaded = 0
         
         console.print(f"\n[green]开始下载用户发布的作品...[/green]")
-        
+
+        # 先获取全部作品并打印网页URL
+        all_posts = await self._fetch_user_posts(user_id, 0)
+        if all_posts:
+            aweme_all = all_posts.get('aweme_list', [])
+            if aweme_all:
+                console.print(f"\n[cyan]📋 用户作品网页地址（共 {len(aweme_all)} 个）:[/cyan]")
+                for idx, aweme in enumerate(aweme_all, 1):
+                    aid = aweme.get('aweme_id', '')
+                    atype = aweme.get('awemeType', 0)
+                    desc = aweme.get('desc', '')[:30]
+                    if atype == 1:
+                        web_url = f"https://www.douyin.com/note/{aid}"
+                    else:
+                        web_url = f"https://www.douyin.com/video/{aid}"
+                    console.print(f"  {idx:>3}. {web_url}  [dim]{desc}[/dim]")
+                console.print()
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -774,20 +827,24 @@ class UnifiedDownloader:
             TimeRemainingColumn(),
             console=console
         ) as progress:
-            
+
             while True:
                 # 限速
                 await self.rate_limiter.acquire()
-                
-                # 获取作品列表
-                posts_data = await self._fetch_user_posts(user_id, cursor)
+
+                # 复用已获取的数据，避免重复请求
+                if all_posts and cursor == 0:
+                    posts_data = all_posts
+                    all_posts = None  # 只用一次
+                else:
+                    posts_data = await self._fetch_user_posts(user_id, cursor)
                 if not posts_data:
                     break
-                
+
                 aweme_list = posts_data.get('aweme_list', [])
                 if not aweme_list:
                     break
-                
+
                 # 下载作品
                 for aweme in aweme_list:
                     if max_count > 0 and downloaded >= max_count:
@@ -1341,20 +1398,20 @@ class UnifiedDownloader:
             console.print("[red]没有找到要下载的链接！[/red]")
             return
         
-        # 分析URL类型
+        # 解析短链接并分析URL类型
         console.print(f"\n[cyan]📊 链接分析[/cyan]")
-        url_types = {}
+        resolved_urls = []
         for url in urls:
-            content_type = self.detect_content_type(url)
-            url_types[url] = content_type
+            resolved = await self.resolve_short_url(url)
+            content_type = self.detect_content_type(resolved)
+            resolved_urls.append((resolved, content_type))
             console.print(f"  • {content_type.upper()}: {url[:50]}...")
-        
+
         # 开始下载
-        console.print(f"\n[green]⏳ 开始下载 {len(urls)} 个链接...[/green]\n")
-        
-        for i, url in enumerate(urls, 1):
-            content_type = url_types[url]
-            console.print(f"[{i}/{len(urls)}] 处理: {url}")
+        console.print(f"\n[green]⏳ 开始下载 {len(resolved_urls)} 个链接...[/green]\n")
+
+        for i, (url, content_type) in enumerate(resolved_urls, 1):
+            console.print(f"[{i}/{len(resolved_urls)}] 处理: {url[:80]}")
             
             if content_type == ContentType.VIDEO or content_type == ContentType.IMAGE:
                 await self.download_single_video(url)
@@ -1378,7 +1435,7 @@ class UnifiedDownloader:
                 console.print(f"[yellow]不支持的内容类型: {content_type}[/yellow]")
             
             # 显示进度
-            console.print(f"进度: {i}/{len(urls)} | 成功: {self.stats.success} | 失败: {self.stats.failed}")
+            console.print(f"进度: {i}/{len(resolved_urls)} | 成功: {self.stats.success} | 失败: {self.stats.failed}")
             console.print("-" * 60)
         
         # 显示统计

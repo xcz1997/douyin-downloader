@@ -74,7 +74,7 @@ class CookieExtractor:
             try:
                 # 访问抖音登录页
                 console.print("\n[cyan]正在打开抖音登录页面...[/cyan]")
-                await page.goto('https://www.douyin.com', wait_until='networkidle')
+                await page.goto('https://www.douyin.com', wait_until='domcontentloaded', timeout=60000)
                 
                 # 等待用户登录
                 console.print("\n[yellow]请在浏览器中完成登录操作[/yellow]")
@@ -131,7 +131,7 @@ class CookieExtractor:
             finally:
                 await browser.close()
     
-    async def _wait_for_login(self, page: Page, timeout: int = 300) -> bool:
+    async def _wait_for_login(self, page: Page, timeout: int = 1200) -> bool:
         """等待用户登录
         
         Args:

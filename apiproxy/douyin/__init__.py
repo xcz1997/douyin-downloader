@@ -9,7 +9,7 @@ douyin_headers = {
     'referer': 'https://www.douyin.com/',
     'accept': 'application/json, text/plain, */*',
     'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-    'accept-encoding': 'gzip, deflate, br',
+    'accept-encoding': 'gzip, deflate',
     'sec-ch-ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
     'sec-ch-ua-mobile': '?0',
     'sec-ch-ua-platform': '"macOS"',
