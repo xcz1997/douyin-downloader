@@ -91,10 +91,11 @@ class DownloadEngine:
                         files_written += 1
 
         if self._download_cover:
-            cover_url = self._get_cover_url(aweme)
+            cover_url, cover_fallbacks = self._get_cover_urls(aweme)
             if cover_url:
                 path = save_dir / f"{folder_name}_cover.jpg"
-                if await self.download_file(cover_url, path, parent_span):
+                if await self.download_file(cover_url, path, parent_span,
+                                            fallback_urls=cover_fallbacks):
                     files_written += 1
 
         if self._download_json:
@@ -199,10 +200,16 @@ class DownloadEngine:
             return url_list[0] if url_list else None
         return play_url if isinstance(play_url, str) else None
 
-    def _get_cover_url(self, aweme: dict) -> str | None:
-        cover = aweme.get("video", {}).get("cover", {})
-        url_list = cover.get("url_list", [])
-        return url_list[0] if url_list else None
+    def _get_cover_urls(self, aweme: dict) -> tuple[str | None, list[str]]:
+        """获取封面 URL + fallback 列表，尝试多个来源"""
+        all_urls = []
+        for key in ("origin_cover", "cover", "dynamic_cover"):
+            src = aweme.get("video", {}).get(key, {})
+            if src and src.get("url_list"):
+                all_urls.extend(src["url_list"])
+        if not all_urls:
+            return (None, [])
+        return (all_urls[0], all_urls[1:])
 
     async def close(self):
         if self._session and not self._session.closed:
