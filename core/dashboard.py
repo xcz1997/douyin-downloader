@@ -274,17 +274,18 @@ class Dashboard:
             self._build_display(),
             console=self._console,
             refresh_per_second=self._refresh_per_second,
+            auto_refresh=True,
         )
         self._live.start()
 
     def refresh(self) -> None:
-        """Push a fresh render frame to the Live display.
+        """Update the Live renderable. Rich auto_refresh handles actual rendering.
 
         No-op when Rich is unavailable or :meth:`start` has not been called.
         """
         if self._live is None:
             return
-        self._live.update(self._build_display())
+        self._live.update(self._build_display(), refresh=False)
 
     def stop(self) -> None:
         """Stop the Rich Live display (no-op when Rich is unavailable)."""
