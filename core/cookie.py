@@ -89,10 +89,10 @@ class CookieManager:
                 self._log.debug("配置 Cookie 缺少必需字段", missing=missing)
             return None
         valid, reason = await self.validate(state.value)
-        state.is_valid = valid
         state.last_checked = time.time()
         if not valid and self._log:
             self._log.warn("Cookie 在线验证未通过，但字段完整，继续使用", reason=reason)
+        state.is_valid = True
         return state
 
     async def _try_browser(self) -> CookieState | None:
