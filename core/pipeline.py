@@ -287,6 +287,7 @@ class DownloadPipeline:
                 post_limit = self._config.number.get("post", 0)
                 if post_limit > 0 and downloaded >= post_limit:
                     break
+                desc = (post.get("desc") or "")[:30]
                 with self._tracer.context_span(
                     dl_span,
                     "download_media",
@@ -296,6 +297,18 @@ class DownloadPipeline:
                     result = await self._engine.download_media(post, media_span)
                     if result.success:
                         downloaded += 1
+                        self._dashboard.log_done(
+                            desc or f"作品 {i+1}",
+                            True,
+                            f"{result.files_written} 文件, {result.elapsed:.1f}s",
+                        )
+                    else:
+                        self._dashboard.log_done(
+                            desc or f"作品 {i+1}",
+                            False,
+                            result.error or "下载失败",
+                            trace_id=media_span.trace_id,
+                        )
                 self._dashboard.update_progress(task, i + 1, total)
                 self._dashboard.refresh()
 

@@ -349,24 +349,27 @@ class Dashboard:
                     task.url,
                 )
 
-        # Recent done-log
-        done_table = Table(box=box.SIMPLE, show_header=True, expand=True)
-        done_table.add_column("", width=2)
-        done_table.add_column("Label", overflow="fold")
-        done_table.add_column("Detail")
-        done_table.add_column("Trace ID", style="dim")
-
-        with self._lock:
-            recent = self._done_log[-10:]
-
-        for entry in reversed(recent):
-            icon = Text("[OK]", style="green") if entry.success else Text("[FAIL]", style="red")
-            done_table.add_row(icon, entry.label, entry.detail, entry.trace_id)
-
         from rich.console import Group  # local import to avoid top-level dep
 
+        with self._lock:
+            recent = self._done_log[-8:]
+
+        if recent:
+            done_table = Table(box=box.SIMPLE, show_header=False, expand=True)
+            done_table.add_column("", width=4)
+            done_table.add_column("", overflow="fold")
+            done_table.add_column("")
+            for entry in recent:
+                icon = Text("  ✓ ", style="green") if entry.success else Text("  ✗ ", style="red")
+                done_table.add_row(icon, entry.label, entry.detail)
+            return Panel(
+                Group(header, "", table, "", Text("最近完成:", style="dim"), done_table),
+                subtitle="[dim]douyin-downloader[/dim]",
+                expand=True,
+            )
+
         return Panel(
-            Group(header, "", table, "", done_table),
+            Group(header, "", table),
             subtitle="[dim]douyin-downloader[/dim]",
             expand=True,
         )
