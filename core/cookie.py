@@ -76,15 +76,24 @@ class CookieManager:
         """Attempt to load and validate a cookie from the config file.
 
         Returns:
-            A CookieState if the config cookie is present and valid, else None.
+            A CookieState if the config cookie has required fields, else None.
+            Online validation failure is a warning, not a blocker.
         """
         state = self._state_from_config()
         if not state:
             return None
-        valid, _reason = await self.validate(state.value)
+        parsed = self.parse_cookie_string(state.value)
+        missing, _ = self.check_cookie_fields(parsed)
+        if missing:
+            if self._log:
+                self._log.debug("配置 Cookie 缺少必需字段", missing=missing)
+            return None
+        valid, reason = await self.validate(state.value)
         state.is_valid = valid
         state.last_checked = time.time()
-        return state if valid else None
+        if not valid and self._log:
+            self._log.warn("Cookie 在线验证未通过，但字段完整，继续使用", reason=reason)
+        return state
 
     async def _try_browser(self) -> CookieState | None:
         """Attempt to extract a cookie from the local browser cookie store.
@@ -179,6 +188,11 @@ class CookieManager:
             A tuple of (is_valid, reason) where reason is "ok" on success or
             an error description on failure.
         """
+        parsed = self.parse_cookie_string(cookie_str)
+        missing, _ = self.check_cookie_fields(parsed)
+        if missing:
+            return (False, f"missing_fields: {missing}")
+
         import aiohttp
 
         try:
@@ -202,7 +216,10 @@ class CookieManager:
                 ) as resp:
                     if resp.status == 403:
                         return (False, "blocked")
-                    data = await resp.json(content_type=None)
+                    try:
+                        data = await resp.json(content_type=None)
+                    except Exception:
+                        return (False, f"non_json_response, status={resp.status}")
                     if data.get("status_code") == 0:
                         return (True, "ok")
                     return (False, f"status_code={data.get('status_code')}")
