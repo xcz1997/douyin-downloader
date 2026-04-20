@@ -297,6 +297,7 @@ class DownloadPipeline:
                     if result.success:
                         downloaded += 1
                 self._dashboard.update_progress(task, i + 1, total)
+                self._dashboard.refresh()
 
         task.stats["downloaded"] = downloaded
         task.stats["total"] = total

@@ -362,11 +362,10 @@ class Dashboard:
             icon = Text("[OK]", style="green") if entry.success else Text("[FAIL]", style="red")
             done_table.add_row(icon, entry.label, entry.detail, entry.trace_id)
 
-        from rich.columns import Columns  # local import to avoid top-level dep
+        from rich.console import Group  # local import to avoid top-level dep
 
-        body = Columns([table, done_table], equal=False)
         return Panel(
-            f"{header}\n",
+            Group(header, "", table, "", done_table),
             subtitle="[dim]douyin-downloader[/dim]",
             expand=True,
         )
