@@ -61,11 +61,11 @@ class DownloadEngine:
         if aweme.get("images"):
             images = aweme.get("images", [])
             for i, img in enumerate(images):
-                url_list = img.get("url_list", [])
-                if url_list:
-                    path = save_dir / f"image_{i+1}.jpg"
-                    ok = await self.download_file(url_list[0], path, parent_span,
-                                                  fallback_urls=url_list[1:])
+                best_url, fallbacks, ext = self._get_best_image_url(img)
+                if best_url:
+                    path = save_dir / f"image_{i+1}.{ext}"
+                    ok = await self.download_file(best_url, path, parent_span,
+                                                  fallback_urls=fallbacks)
                     if ok:
                         files_written += 1
                     else:
@@ -139,17 +139,54 @@ class DownloadEngine:
         self._log.warn("文件下载失败", file=path.name, urls_tried=len(all_urls))
         return False
 
+    def _get_best_image_url(self, img: dict) -> tuple[str | None, list[str], str]:
+        """从图片数据中选择最高质量 URL。优先 download_url_list（无压缩原图）。
+        返回 (best_url, fallback_urls, extension)"""
+        dl_urls = img.get("download_url_list", [])
+        url_list = img.get("url_list", [])
+
+        if dl_urls:
+            best = dl_urls[0]
+            fallbacks = dl_urls[1:] + url_list
+        elif url_list:
+            best = url_list[0]
+            fallbacks = url_list[1:]
+        else:
+            return (None, [], "jpg")
+
+        ext = "webp" if ".webp" in best.split("?")[0] else "jpg"
+        return (best, fallbacks, ext)
+
     def _get_video_url(self, aweme: dict) -> str | None:
+        video = aweme.get("video", {})
+        bit_rate = video.get("bit_rate", [])
+        if bit_rate:
+            best = max(bit_rate, key=lambda b: b.get("bit_rate", 0))
+            pa = best.get("play_addr", {})
+            urls = pa.get("url_list", [])
+            if urls:
+                return urls[0].replace("playwm", "play")
+
         for key in ("play_addr_h264", "play_addr"):
-            addr = aweme.get("video", {}).get(key)
+            addr = video.get(key)
             if addr and addr.get("url_list"):
-                return addr["url_list"][0].replace("playwm", "play")
+                url = addr["url_list"][0].replace("playwm", "play")
+                url = url.replace("720p", "1080p")
+                return url
         return None
 
     def _get_video_fallbacks(self, aweme: dict) -> list[str]:
+        video = aweme.get("video", {})
         urls = []
-        for key in ("play_addr", "play_addr_h264", "download_addr"):
-            addr = aweme.get("video", {}).get(key)
+        bit_rate = video.get("bit_rate", [])
+        if bit_rate:
+            sorted_br = sorted(bit_rate, key=lambda b: b.get("bit_rate", 0), reverse=True)
+            for br in sorted_br:
+                pa = br.get("play_addr", {})
+                urls.extend(pa.get("url_list", []))
+
+        for key in ("play_addr_h264", "play_addr", "download_addr"):
+            addr = video.get(key)
             if addr and addr.get("url_list"):
                 urls.extend(addr["url_list"])
         return urls
