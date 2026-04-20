@@ -138,13 +138,18 @@ def main():
         return
 
     if args.generate_config:
-        cmd_generate_config(args.config)
+        example_path = Path(args.config).parent / "config.example.yml"
+        cmd_generate_config(str(example_path))
         return
 
     loader = ConfigLoader(args.config)
 
     if not Path(args.config).exists() and not args.urls:
-        cmd_generate_config(args.config)
+        example_path = Path(args.config).parent / "config.example.yml"
+        if not example_path.exists():
+            cmd_generate_config(str(example_path))
+        print(f"未找到 {args.config}，已生成示例: {example_path}")
+        print(f"请复制并编辑: cp {example_path} {args.config}")
         return
 
     config = loader.load()
