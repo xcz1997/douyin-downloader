@@ -81,15 +81,17 @@ class DownloadStats:
     
     @property
     def success_rate(self):
-        return (self.success / self.total * 100) if self.total > 0 else 0
+        total = self.success + self.failed + self.skipped
+        return (self.success / total * 100) if total > 0 else 0
     
     @property
     def elapsed_time(self):
         return time.time() - self.start_time
     
     def to_dict(self):
+        actual_total = self.success + self.failed + self.skipped
         return {
-            'total': self.total,
+            'total': actual_total,
             'success': self.success,
             'failed': self.failed,
             'skipped': self.skipped,
@@ -819,14 +821,21 @@ class UnifiedDownloader:
                     console.print(f"  {idx:>3}. {web_url}  [dim]{desc}[/dim]")
                 console.print()
 
+        total_count = len(all_posts.get('aweme_list', [])) if all_posts else 0
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("({task.completed}/{task.total})"),
             TimeRemainingColumn(),
-            console=console
+            console=console,
+            transient=True
         ) as progress:
+            task_id = progress.add_task(
+                "下载作品",
+                total=max(total_count, 1)
+            )
 
             while True:
                 # 限速
@@ -850,37 +859,36 @@ class UnifiedDownloader:
                     if max_count > 0 and downloaded >= max_count:
                         console.print(f"[yellow]已达到下载数量限制: {max_count}[/yellow]")
                         return
-                    
+
                     # 时间过滤
                     if not self._check_time_filter(aweme):
                         continue
-                    
-                    # 创建下载任务
-                    task_id = progress.add_task(
-                        f"下载作品 {downloaded + 1}", 
-                        total=100
+
+                    desc = (aweme.get('desc') or '')[:20]
+                    progress.update(
+                        task_id,
+                        description=f"下载作品 {downloaded + 1}/{total_count} {desc}"
                     )
-                    
+
                     # 增量判断
                     if self._should_skip_increment('post', aweme, sec_uid=user_id):
                         continue
-                    
+
                     # 下载
                     success = await self._download_media_files(aweme, progress)
-                    
+
                     if success:
                         downloaded += 1
-                        self.stats.success += 1  # 增加成功计数
-                        progress.update(task_id, completed=100)
+                        self.stats.success += 1
+                        progress.update(task_id, completed=downloaded)
                         self._record_increment('post', aweme, sec_uid=user_id)
                     else:
-                        self.stats.failed += 1  # 增加失败计数
-                        progress.update(task_id, description="[red]下载失败[/red]")
-                
+                        self.stats.failed += 1
+
                 # 检查是否有更多
                 if not posts_data.get('has_more'):
                     break
-                
+
                 cursor = posts_data.get('max_cursor', 0)
         
         console.print(f"[green]✅ 用户作品下载完成，共下载 {downloaded} 个[/green]")
@@ -943,8 +951,10 @@ class UnifiedDownloader:
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeRemainingColumn(),
-            console=console
+            console=console,
+            transient=True
         ) as progress:
+            task_id = progress.add_task("下载喜欢", total=None)
 
             while True:
                 # 限速
@@ -968,9 +978,10 @@ class UnifiedDownloader:
                     if not self._check_time_filter(aweme):
                         continue
 
-                    task_id = progress.add_task(
-                        f"下载喜欢 {downloaded + 1}",
-                        total=100
+                    desc = (aweme.get('desc') or '')[:20]
+                    progress.update(
+                        task_id,
+                        description=f"下载喜欢 {downloaded + 1} {desc}"
                     )
 
                     # 增量判断
@@ -981,7 +992,7 @@ class UnifiedDownloader:
 
                     if success:
                         downloaded += 1
-                        progress.update(task_id, completed=100)
+                        progress.update(task_id, completed=downloaded)
                         self._record_increment('like', aweme, sec_uid=user_id)
                     else:
                         progress.update(task_id, description="[red]下载失败[/red]")

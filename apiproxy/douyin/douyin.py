@@ -330,8 +330,6 @@ class Douyin(object):
 
                     # 检查aweme_list字段是否存在
                     if "aweme_list" not in datadict:
-                        self.console.print(f"[red]❌ 响应中缺少aweme_list字段[/]")
-                        self.console.print(f"[yellow]🔍 可用字段: {list(datadict.keys())}[/]")
                         break
 
                     current_count = len(datadict["aweme_list"])
@@ -557,8 +555,6 @@ class Douyin(object):
                         break
 
                     if "aweme_list" not in datadict:
-                        self.console.print(f"[red]❌ 合集响应中缺少aweme_list字段[/]")
-                        self.console.print(f"[yellow]🔍 可用字段: {list(datadict.keys())}[/]")
                         break
 
                     for aweme in datadict["aweme_list"]:
@@ -774,8 +770,6 @@ class Douyin(object):
                         break
 
                     if "aweme_list" not in datadict:
-                        self.console.print(f"[red]❌ 音乐响应中缺少aweme_list字段[/]")
-                        self.console.print(f"[yellow]🔍 可用字段: {list(datadict.keys())}[/]")
                         break
 
                     print('[  提示  ]:本次请求返回 ' + str(len(datadict["aweme_list"])) + ' 条数据\r')
