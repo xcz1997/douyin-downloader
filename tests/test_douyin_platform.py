@@ -71,3 +71,14 @@ def test_no_match_xhs():
 def test_no_match_random():
     p = DouyinPlatform()
     assert p.match_url("https://example.com/foo") is None
+
+
+def test_video_url_with_sec_uid_still_video():
+    """Guard against _USER_RE hijacking video URLs that carry sec_uid=."""
+    p = DouyinPlatform()
+    ref = p.match_url(
+        "https://www.douyin.com/video/7123456789?sec_uid=MS4wLjABxxx"
+    )
+    assert ref is not None
+    assert ref.content_type == "video"
+    assert ref.resource_id == "7123456789"

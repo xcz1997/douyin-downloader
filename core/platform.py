@@ -67,8 +67,14 @@ class ContentRef:
 
     Attributes:
         platform: Short platform identifier.
-        content_type: One of ``"single"``, ``"user"``, ``"collection"``,
-            ``"music"``, ``"search"``, ``"topic"``.
+        content_type: Platform-specific classification. For Douyin:
+            ``"short"`` (unresolved v.douyin.com link), ``"video"``,
+            ``"image"`` (note-style image posts), ``"user"``, ``"mix"``
+            (playlist/collection), ``"music"`` (posts using a sound).
+            For XHS (future): ``"single"``, ``"user"``, ``"collection"``,
+            ``"search"``, ``"topic"``. Pipeline routes ``"single"`` /
+            ``"video"`` / ``"image"`` to the single-item handler; all
+            other types route to the paginated-list handler.
         resource_id: The primary ID (aweme_id, sec_uid, mix_id, note_id,
             user_id, keyword, ...). ``None`` when not applicable.
         resolved_url: Fully resolved (non-short) URL.

@@ -27,6 +27,9 @@ from core.tracer import Tracer
 # URL pattern constants
 # ---------------------------------------------------------------------------
 
+# NOTE: These regexes are temporarily duplicated in core/platforms/douyin.py
+# during the Phase 1-2 migration. Task 8 of the XHS integration plan removes
+# them from this file once DownloadPipeline routes through PlatformRegistry.
 _SHORT_URL_RE = re.compile(r"https?://v\.douyin\.com/\w+")
 _VIDEO_RE = re.compile(r"douyin\.com/video/(\d+)")
 _NOTE_RE = re.compile(r"douyin\.com/note/(\d+)")
