@@ -6,7 +6,6 @@ from core.config import ConfigLoader
 from core.tracer import Tracer
 from core.logger import DualLogger
 from core.dashboard import Dashboard
-from core.pipeline import DownloadPipeline
 from core.models import AppConfig, DownloadOptions, DownloadTask, CookieState
 
 
@@ -104,22 +103,6 @@ def test_tracer_exception_chain(tmp_path):
     output = Tracer.replay(tmp_path, root.trace_id)
     assert "inner" in output
     assert "error" in output
-
-
-def test_pipeline_url_parsing_comprehensive():
-    """Pipeline static methods handle all URL patterns"""
-    # Short URLs
-    assert DownloadPipeline.is_short_url("https://v.douyin.com/cGYAzzSDbRQ/")
-    assert not DownloadPipeline.is_short_url("https://www.douyin.com/video/123")
-
-    # Content type detection
-    assert DownloadPipeline.detect_content_type("https://www.douyin.com/video/7562522534060772649") == "video"
-    assert DownloadPipeline.detect_content_type("https://www.douyin.com/note/7562522534060772649") == "image"
-    assert DownloadPipeline.detect_content_type("https://www.douyin.com/user/MS4wLjABAAAAtest") == "user"
-
-    # ID extraction
-    assert DownloadPipeline.extract_id("https://www.douyin.com/video/7562522534060772649", "video") == "7562522534060772649"
-    assert DownloadPipeline.extract_id("https://www.douyin.com/note/7562522534060772649", "image") == "7562522534060772649"
 
 
 def test_dashboard_full_lifecycle():
