@@ -11,7 +11,6 @@ from typing import Callable
 
 import aiohttp
 
-from core.errors import DownloadFileError  # noqa: F401 (public re-export)
 from core.logger import BoundLogger
 from core.models import DownloadResult, DownloadTask
 from core.platform import MediaAsset, MediaItem
@@ -76,7 +75,7 @@ class DownloadEngine:
         return path
 
     def _filename_for(
-        self, asset: MediaAsset, folder_name: str,
+        self, asset: MediaAsset, folder_name: str, index: int,
     ) -> str:
         """Decide the on-disk filename for an asset."""
         if asset.suggested_filename:
@@ -88,7 +87,7 @@ class DownloadEngine:
         if asset.kind == "cover":
             return f"{folder_name}_cover.{asset.ext}"
         # image / video_live without suggested_filename falls back
-        return f"{asset.kind}_{int(time.time()*1000)}.{asset.ext}"
+        return f"{asset.kind}_{index}.{asset.ext}"
 
     def _should_skip(self, asset: MediaAsset) -> bool:
         if asset.kind == "music" and not self._download_music:
@@ -119,10 +118,10 @@ class DownloadEngine:
         total_bytes = 0
         success = True
 
-        for asset in item.assets:
+        for i, asset in enumerate(item.assets):
             if self._should_skip(asset):
                 continue
-            path = save_dir / self._filename_for(asset, folder_name)
+            path = save_dir / self._filename_for(asset, folder_name, i)
             ok, nbytes = await self.download_file(
                 asset.url, path, parent_span,
                 fallback_urls=asset.fallback_urls,

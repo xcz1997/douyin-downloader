@@ -125,3 +125,23 @@ async def test_flags_skip_music_cover(tmp_path):
     result = await engine.download_media(_make_item(), span)
     # Only video, no music / no cover / no json
     assert result.files_written == 1
+
+
+@pytest.mark.asyncio
+async def test_download_file_skip_existing(tmp_path):
+    """If the target file already exists and is non-empty, skip download."""
+    tracer = MagicMock(); tracer.add_event = MagicMock()
+    logger = MagicMock()
+    engine = DownloadEngine(
+        save_path=tmp_path, tracer=tracer, logger=logger, concurrency=2,
+    )
+    target = tmp_path / "existing.mp4"
+    target.write_bytes(b"existing data")
+
+    span = MagicMock()
+    ok, nbytes = await engine.download_file(
+        "https://ignored/a.mp4", target, span,
+    )
+    assert ok is True
+    assert nbytes == 0
+    tracer.add_event.assert_called_once_with(span, "file_skip", path="existing.mp4")
