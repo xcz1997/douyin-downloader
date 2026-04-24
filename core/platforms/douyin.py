@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import re
 
-from core.platform import ContentRef, MediaAsset, MediaItem
+import aiohttp
+
+from core.platform import ContentRef, ListPage, MediaAsset, MediaItem
 
 
 _SHORT_URL_RE = re.compile(r"^https?://v\.douyin\.com/\w+")
@@ -206,3 +208,80 @@ def _cover_to_asset(video: dict) -> MediaAsset | None:
     return MediaAsset(
         url=primary, kind="cover", ext="jpg", fallback_urls=fallbacks,
     )
+
+
+class DouyinPlatformClient:
+    """Adapter wrapping ``DouyinAPIClient`` to the PlatformClient protocol.
+
+    The underlying ``DouyinAPIClient`` returns raw dicts; this class converts
+    them to MediaItem / ListPage so DownloadPipeline stays platform-agnostic.
+
+    Args:
+        api: An initialized ``DouyinAPIClient``.
+        resolve_func: Optional coroutine to resolve ``v.douyin.com`` short
+            URLs. Defaults to the built-in single-redirect resolver.
+    """
+
+    def __init__(self, api, resolve_func=None) -> None:
+        self._api = api
+        self._resolve_func = resolve_func or _default_resolve_short_url
+
+    async def resolve_short_url(self, url: str) -> str:
+        return await self._resolve_func(url)
+
+    async def fetch_single(self, ref: ContentRef, span) -> MediaItem:
+        aweme = await self._api.get_video_info(ref.resource_id, span)
+        return aweme_to_media_item(aweme)
+
+    async def fetch_list(
+        self, ref: ContentRef, cursor, span,
+    ) -> ListPage:
+        if ref.content_type == "user":
+            mode = ref.extra.get("mode", "post")
+            if mode == "like":
+                page = await self._api.get_user_likes(
+                    ref.resource_id, cursor or 0, span,
+                )
+            else:
+                page = await self._api.get_user_posts(
+                    ref.resource_id, cursor or 0, span,
+                )
+            next_cursor = page.get("max_cursor", 0)
+        elif ref.content_type == "mix":
+            page = await self._api.get_mix_items(
+                ref.resource_id, cursor or 0, span,
+            )
+            next_cursor = page.get("cursor", 0)
+        elif ref.content_type == "music":
+            page = await self._api.get_music_items(
+                ref.resource_id, cursor or 0, span,
+            )
+            next_cursor = page.get("cursor", 0)
+        else:
+            raise ValueError(
+                f"fetch_list not supported for content_type={ref.content_type}"
+            )
+
+        items = [
+            aweme_to_media_item(a) for a in page.get("aweme_list", [])
+        ]
+        has_more = bool(page.get("has_more"))
+        return ListPage(
+            items=items, next_cursor=next_cursor, has_more=has_more,
+        )
+
+
+async def _default_resolve_short_url(url: str) -> str:
+    """Follow one redirect from a v.douyin.com short URL."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                allow_redirects=False,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status in (301, 302):
+                    return str(resp.headers.get("Location", url))
+    except Exception:
+        pass
+    return url
