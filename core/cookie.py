@@ -2,6 +2,8 @@
 
 Attempts to acquire a valid cookie through a waterfall of strategies:
 config file → local browser → Playwright automation → manual input.
+
+For XHS (Stage A): config-only acquisition; online validation added in Plan 3.
 """
 
 from __future__ import annotations
@@ -23,35 +25,68 @@ _IMPORTANT_FIELDS: list[str] = [
 class CookieManager:
     """Manages cookie acquisition and validation through multiple fallback strategies.
 
+    Supports multiple platforms (Douyin, XHS) with per-platform state caching.
+    Douyin uses a full acquisition waterfall; XHS uses config-only (Stage A).
+
     Attributes:
         _config: Application configuration containing cookie settings.
         _tracer: Optional tracer for distributed tracing spans.
         _log: Logger instance for diagnostic output.
-        _state: Current cookie state, set after successful acquisition.
+        _states: Per-platform CookieState cache, keyed by platform name.
+        _raw_cookies: Snapshot of config cookies as {platform: raw_string}.
     """
 
     def __init__(self, config: AppConfig, tracer, logger) -> None:
         self._config = config
         self._tracer = tracer
         self._log = logger
-        self._state: CookieState | None = None
+        # per-platform state cache, populated by ensure_valid_cookie
+        self._states: dict[str, CookieState] = {}
+        # snapshot of config cookies: {platform: raw_string}
+        cookies_raw = config.cookies
+        if not isinstance(cookies_raw, dict):
+            cookies_raw = {}
+        self._raw_cookies: dict[str, str] = dict(cookies_raw)
 
     @property
     def state(self) -> CookieState | None:
-        """The current validated cookie state, or None if not yet acquired."""
-        return self._state
+        """The validated Douyin cookie state, or None. Kept for back-compat."""
+        return self._states.get("douyin")
 
-    async def ensure_valid_cookie(self) -> CookieState:
-        """Acquire a valid cookie using a prioritised waterfall of strategies.
+    async def ensure_valid_cookie(
+        self, platform: str = "douyin",
+    ) -> CookieState:
+        """Return a valid cookie for *platform*, caching per platform.
 
-        Tries each source in order: config, browser, playwright, manual input.
+        Args:
+            platform: Platform identifier. Currently supports ``"douyin"``
+                (full acquisition waterfall) and ``"xhs"`` (config-only).
 
         Returns:
-            A validated CookieState from the first successful source.
+            CookieState ready for use by that platform's API client.
 
         Raises:
-            CookieExpiredError: When all acquisition strategies are exhausted.
+            CookieExpiredError: Platform unsupported, or all acquisition
+                strategies for the platform failed.
         """
+        if platform in self._states and self._states[platform].is_valid:
+            return self._states[platform]
+
+        if platform == "douyin":
+            state = await self._acquire_douyin()
+        elif platform == "xhs":
+            state = await self._acquire_xhs()
+        else:
+            raise CookieExpiredError(
+                f"platform={platform!r} not supported"
+            )
+
+        state.platform = platform
+        self._states[platform] = state
+        return state
+
+    async def _acquire_douyin(self) -> CookieState:
+        """Douyin-specific acquisition waterfall: config → browser → playwright → manual."""
         steps: list[tuple[str, object]] = [
             ("配置文件", self._try_config),
             ("本地浏览器", self._try_browser),
@@ -63,14 +98,57 @@ class CookieManager:
                 self._log.info(f"Cookie 检测: {name}...")
             result = await fn()
             if result and result.is_valid:
-                self._state = result
                 if self._log:
-                    self._log.info(f"Cookie 有效", source=result.source)
+                    self._log.info("Cookie 有效", source=result.source)
                 return result
             if self._log:
                 self._log.debug(f"Cookie 检测: {name} 未通过")
-
         raise CookieExpiredError("无法获取有效 Cookie，所有方式均失败")
+
+    async def _acquire_xhs(self) -> CookieState:
+        """XHS acquisition: config only (Stage A).
+
+        Plan 3 will add online validation via /api/sns/web/v1/user/selfinfo
+        once the signer is available.
+
+        Returns:
+            A CookieState built from the configured XHS cookie string.
+
+        Raises:
+            CookieExpiredError: No XHS cookie is present in config.
+        """
+        raw = self._raw_cookies.get("xhs", "").strip()
+        if not raw:
+            raise CookieExpiredError(
+                "no XHS cookie configured; run `python xhs_cookie_extractor.py`"
+            )
+        return CookieState(
+            value=raw,
+            source="config",
+            obtained_at=time.time(),
+            platform="xhs",
+            is_valid=True,
+            last_checked=time.time(),
+        )
+
+    def get_for_url(self, url: str) -> CookieState | None:
+        """Return cached CookieState for the platform owning *url*.
+
+        Does not trigger validation — read-only routing. Call
+        ``ensure_valid_cookie(platform=...)`` when validation is needed.
+
+        Args:
+            url: Full URL being routed.
+
+        Returns:
+            Cached CookieState, or None if no pattern matches or the
+            cookie hasn't been acquired yet.
+        """
+        if "xiaohongshu.com" in url or "xhslink.com" in url:
+            return self._states.get("xhs")
+        if "douyin.com" in url:
+            return self._states.get("douyin")
+        return None
 
     async def _try_config(self) -> CookieState | None:
         """Attempt to load and validate a cookie from the config file.
@@ -227,26 +305,21 @@ class CookieManager:
             return (False, str(exc))
 
     def _state_from_config(self) -> CookieState | None:
-        """Build a CookieState from the raw cookie value in config.
+        """Build a CookieState from the Douyin cookie in config.
 
-        Handles both string and dict forms of the cookies field.
+        Reads the ``"douyin"`` key from the platform-keyed cookies dict.
 
         Returns:
-            A CookieState if a usable cookie string is found, else None.
+            A CookieState if a usable Douyin cookie string is found, else None.
         """
-        raw = self._config.cookies
-        if not raw:
-            return None
-        if isinstance(raw, dict):
-            cookie_str = "; ".join(f"{k}={v}" for k, v in raw.items())
-        else:
-            cookie_str = str(raw).strip()
-        if not cookie_str or cookie_str == "auto":
+        raw = self._raw_cookies.get("douyin", "").strip()
+        if not raw or raw == "auto":
             return None
         return CookieState(
-            value=cookie_str,
+            value=raw,
             source="config",
             obtained_at=time.time(),
+            platform="douyin",
         )
 
     def extract_from_browser(self) -> str | None:
