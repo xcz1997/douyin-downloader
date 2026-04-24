@@ -6,6 +6,11 @@ rich==13.7.0             # 终端美化
 # Async support (optional)
 aiohttp>=3.8.0           # 异步 HTTP
 
+# XHS cookie extractor (optional)
+playwright>=1.40          # 浏览器自动化，用于扫码登录
+opencv-python>=4.8.0      # 从页面截图中解码二维码
+qrcode>=7.4               # 在终端重绘二维码
+
 # Logging
 python-json-logger==2.0.7 # JSON 格式日志
 
