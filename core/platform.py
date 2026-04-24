@@ -132,3 +132,48 @@ class PlatformClient(Protocol):
     ) -> "ListPage":
         """Fetch one page of a paginated list (user posts, collection, ...)."""
         ...
+
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+
+class PlatformRegistry:
+    """Registry of platform plugins keyed by ``Platform.name``.
+
+    Queried by DownloadPipeline for every input URL. First registered
+    platform whose ``match_url`` returns non-None wins.
+    """
+
+    def __init__(self) -> None:
+        self._entries: list[tuple[Platform, PlatformClient]] = []
+        self._by_name: dict[str, PlatformClient] = {}
+
+    def register(self, platform: Platform, client: PlatformClient) -> None:
+        """Register a platform plugin.
+
+        Raises:
+            ValueError: A platform with the same name is already registered.
+        """
+        if platform.name in self._by_name:
+            raise ValueError(f"platform {platform.name!r} already registered")
+        self._entries.append((platform, client))
+        self._by_name[platform.name] = client
+
+    def match(
+        self, url: str,
+    ) -> tuple[Platform, PlatformClient, ContentRef] | None:
+        """Find the platform handling ``url``, return (platform, client, ref).
+
+        Returns ``None`` if no registered platform matches.
+        """
+        for platform, client in self._entries:
+            ref = platform.match_url(url)
+            if ref is not None:
+                return platform, client, ref
+        return None
+
+    def get_client(self, platform_name: str) -> PlatformClient | None:
+        """Return the client for a registered platform name, or None."""
+        return self._by_name.get(platform_name)
