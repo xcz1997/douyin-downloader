@@ -280,7 +280,7 @@ async def _default_resolve_short_url(url: str) -> str:
                 allow_redirects=False,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
-                if resp.status in (301, 302):
+                if resp.status in (301, 302, 303, 307, 308):
                     return str(resp.headers.get("Location", url))
     except Exception:
         pass

@@ -114,3 +114,16 @@ async def test_resolve_short_url():
     client = DouyinPlatformClient(api, resolve_func=fake_resolve)
     out = await client.resolve_short_url("https://v.douyin.com/abc")
     assert out == "https://www.douyin.com/video/123"
+
+
+@pytest.mark.asyncio
+async def test_fetch_list_unsupported_raises():
+    """Guard: fetch_list must refuse content types DouyinAPIClient doesn't support."""
+    api = MagicMock()
+    client = DouyinPlatformClient(api)
+    ref = ContentRef(
+        platform="douyin", content_type="search",
+        resource_id="kw", resolved_url="...",
+    )
+    with pytest.raises(ValueError, match="search"):
+        await client.fetch_list(ref, cursor=0, span=MagicMock())
