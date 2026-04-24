@@ -1,9 +1,8 @@
 """Rich Live dashboard with state tracking for the download pipeline.
 
-The Dashboard class manages all runtime state (active tasks, counters,
-cookie info, API metrics) and, when Rich is available, renders an
-interactive live display.  It degrades gracefully when Rich or psutil
-are not installed — all state-management methods work regardless.
+Manages runtime state (active tasks, counters, cookie info, API metrics,
+current download detail) and renders an interactive Rich Live display.
+Degrades gracefully when Rich or psutil are unavailable.
 """
 
 from __future__ import annotations
@@ -14,11 +13,8 @@ from typing import Any
 
 from core.models import CookieState, DownloadTask
 
-# ---------------------------------------------------------------------------
-# Optional heavy dependencies
-# ---------------------------------------------------------------------------
 try:
-    from rich.console import Console
+    from rich.console import Console, Group
     from rich.live import Live
     from rich.table import Table
     from rich.panel import Panel
@@ -37,21 +33,12 @@ except ImportError:  # pragma: no cover
     _PSUTIL_AVAILABLE = False
 
 
-# ---------------------------------------------------------------------------
-# Log entry for completed / failed items
-# ---------------------------------------------------------------------------
 class _DoneEntry:
-    """Single record stored in the done-log ring buffer."""
-
     __slots__ = ("label", "success", "detail", "trace_id", "ts")
 
     def __init__(
-        self,
-        label: str,
-        success: bool,
-        detail: str,
-        trace_id: str,
-        ts: float,
+        self, label: str, success: bool, detail: str,
+        trace_id: str, ts: float,
     ) -> None:
         self.label = label
         self.success = success
@@ -60,154 +47,136 @@ class _DoneEntry:
         self.ts = ts
 
 
-# ---------------------------------------------------------------------------
-# Main class
-# ---------------------------------------------------------------------------
 class Dashboard:
-    """Runtime state tracker and optional Rich Live display.
-
-    Args:
-        total_tasks: Total number of download tasks scheduled for this run.
-        concurrency: Maximum number of concurrent downloads.
-        refresh_per_second: Rich Live refresh rate (ignored when Rich is
-            unavailable).
-        done_log_size: Maximum entries kept in the done-log ring buffer.
-    """
-
     def __init__(
-        self,
-        total_tasks: int,
-        concurrency: int,
-        refresh_per_second: float = 4.0,
-        done_log_size: int = 50,
+        self, total_tasks: int, concurrency: int,
+        refresh_per_second: float = 4.0, done_log_size: int = 50,
     ) -> None:
         self._total: int = total_tasks
         self._concurrency: int = concurrency
         self._refresh_per_second: float = refresh_per_second
         self._done_log_size: int = done_log_size
 
-        # Task registry
         self._tasks: dict[str, DownloadTask] = {}
-        # Per-task file-level progress: task_id -> (done_files, total_files)
         self._task_progress: dict[str, tuple[int, int]] = {}
 
-        # Counters
         self._completed: int = 0
         self._failed: int = 0
         self._api_calls: int = 0
         self._api_fails: int = 0
 
-        # Done-log ring buffer (most-recent last)
         self._done_log: list[_DoneEntry] = []
-
-        # Cookie state
         self._cookie_state: CookieState | None = None
-
-        # Timing
         self._start_time: float = time.monotonic()
-
-        # Thread safety
         self._lock: threading.Lock = threading.Lock()
 
-        # Rich Live handle (None when Rich is unavailable or not started)
         self._live: Any | None = None
         self._console: Any | None = None
+
+        self._current_item: dict | None = None
+        self._total_bytes: int = 0
+        self._status_message: str | None = None
 
     # ------------------------------------------------------------------
     # Task lifecycle
     # ------------------------------------------------------------------
 
     def add_task(self, task: DownloadTask) -> None:
-        """Register a new task in the dashboard.
-
-        Args:
-            task: The DownloadTask to register.
-        """
         with self._lock:
             self._tasks[task.task_id] = task
 
     def update_task(self, task: DownloadTask) -> None:
-        """Refresh the stored snapshot of a task.
-
-        Args:
-            task: The DownloadTask with updated fields.
-        """
         with self._lock:
             self._tasks[task.task_id] = task
 
-    def update_progress(
-        self, task: DownloadTask, done: int, total: int
-    ) -> None:
-        """Record file-level download progress for a task.
-
-        Args:
-            task: The task whose progress is being updated.
-            done: Number of files completed so far.
-            total: Total number of files expected.
-        """
+    def update_progress(self, task: DownloadTask, done: int, total: int) -> None:
         with self._lock:
             self._task_progress[task.task_id] = (done, total)
 
-    def update_file_progress(
-        self, task: DownloadTask, done: int, total: int
-    ) -> None:
-        """Alias for :meth:`update_progress` (byte-level or file-level).
-
-        Args:
-            task: The task whose progress is being updated.
-            done: Amount completed (bytes or files).
-            total: Total amount expected.
-        """
+    def update_file_progress(self, task: DownloadTask, done: int, total: int) -> None:
         self.update_progress(task, done, total)
+
+    # ------------------------------------------------------------------
+    # Current item tracking
+    # ------------------------------------------------------------------
+
+    def set_current_item(self, *, desc: str = "", author: str = "",
+                         index: int = 0, total: int = 0) -> None:
+        with self._lock:
+            self._current_item = {
+                "desc": desc, "author": author,
+                "index": index, "total": total,
+                "file_name": "", "bytes_done": 0, "bytes_total": 0,
+                "file_start": time.monotonic(),
+            }
+
+    def update_bytes_progress(self, bytes_done: int, bytes_total: int,
+                              file_name: str = "") -> None:
+        with self._lock:
+            if self._current_item is None:
+                return
+            if file_name and file_name != self._current_item.get("file_name"):
+                self._current_item["file_start"] = time.monotonic()
+            self._current_item["bytes_done"] = bytes_done
+            self._current_item["bytes_total"] = bytes_total
+            if file_name:
+                self._current_item["file_name"] = file_name
+
+    def clear_current_item(self) -> None:
+        with self._lock:
+            self._current_item = None
+
+    def add_bytes(self, nbytes: int) -> None:
+        with self._lock:
+            self._total_bytes += nbytes
+
+    def set_status(self, message: str) -> None:
+        with self._lock:
+            self._status_message = message
+
+    def clear_status(self) -> None:
+        with self._lock:
+            self._status_message = None
 
     # ------------------------------------------------------------------
     # Completion logging
     # ------------------------------------------------------------------
 
     def log_done(
-        self,
-        label: str,
-        success: bool,
-        detail: str,
-        *,
+        self, label: str, success: bool, detail: str, *,
         trace_id: str = "",
     ) -> None:
-        """Record that a task has finished (succeeded or failed).
-
-        Args:
-            label: Human-readable name / URL of the task.
-            success: ``True`` if the task succeeded, ``False`` otherwise.
-            detail: Short description (e.g. file count or error message).
-            trace_id: Optional trace identifier for correlation.
-        """
         entry = _DoneEntry(
-            label=label,
-            success=success,
-            detail=detail,
-            trace_id=trace_id,
-            ts=time.time(),
+            label=label, success=success, detail=detail,
+            trace_id=trace_id, ts=time.time(),
         )
         with self._lock:
             if success:
                 self._completed += 1
             else:
                 self._failed += 1
-
             self._done_log.append(entry)
-            # Keep ring buffer bounded
             if len(self._done_log) > self._done_log_size:
-                self._done_log = self._done_log[-self._done_log_size :]
+                self._done_log = self._done_log[-self._done_log_size:]
+
+    def log_item_done(
+        self, label: str, success: bool, detail: str, *,
+        trace_id: str = "",
+    ) -> None:
+        entry = _DoneEntry(
+            label=label, success=success, detail=detail,
+            trace_id=trace_id, ts=time.time(),
+        )
+        with self._lock:
+            self._done_log.append(entry)
+            if len(self._done_log) > self._done_log_size:
+                self._done_log = self._done_log[-self._done_log_size:]
 
     # ------------------------------------------------------------------
     # API metrics
     # ------------------------------------------------------------------
 
     def record_api_call(self, success: bool) -> None:
-        """Track an outbound API call result.
-
-        Args:
-            success: ``True`` if the API call succeeded, ``False`` otherwise.
-        """
         with self._lock:
             self._api_calls += 1
             if not success:
@@ -218,11 +187,6 @@ class Dashboard:
     # ------------------------------------------------------------------
 
     def set_cookie_state(self, state: CookieState) -> None:
-        """Update the tracked cookie state.
-
-        Args:
-            state: Current :class:`~core.models.CookieState`.
-        """
         with self._lock:
             self._cookie_state = state
 
@@ -231,23 +195,10 @@ class Dashboard:
     # ------------------------------------------------------------------
 
     def get_state(self) -> dict[str, Any]:
-        """Return a thread-safe snapshot of the current dashboard state.
-
-        Returns:
-            Dictionary with keys:
-            ``total``, ``completed``, ``failed``, ``active_count``,
-            ``api_calls``, ``api_fails``, ``cookie_source``, ``elapsed``.
-        """
         with self._lock:
-            active = sum(
-                1
-                for t in self._tasks.values()
-                if t.status == "running"
-            )
+            active = sum(1 for t in self._tasks.values() if t.status == "running")
             cookie_source = (
-                self._cookie_state.source
-                if self._cookie_state is not None
-                else None
+                self._cookie_state.source if self._cookie_state else None
             )
             elapsed = time.monotonic() - self._start_time
             return {
@@ -266,7 +217,6 @@ class Dashboard:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Start the Rich Live display (no-op when Rich is unavailable)."""
         if not _RICH_AVAILABLE:
             return
         self._console = Console()
@@ -279,22 +229,16 @@ class Dashboard:
         self._live.start()
 
     def refresh(self) -> None:
-        """Update the Live renderable. Rich auto_refresh handles actual rendering.
-
-        No-op when Rich is unavailable or :meth:`start` has not been called.
-        """
         if self._live is None:
             return
         self._live.update(self._build_display(), refresh=False)
 
     def stop(self) -> None:
-        """Stop the Rich Live display (no-op when Rich is unavailable)."""
         if self._live is None:
             return
         self._live.stop()
         self._live = None
 
-    # Context-manager support
     def __enter__(self) -> "Dashboard":
         self.start()
         return self
@@ -303,73 +247,183 @@ class Dashboard:
         self.stop()
 
     # ------------------------------------------------------------------
-    # Rich rendering (only called when Rich is available)
+    # Formatting helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _fmt_bytes(n: int) -> str:
+        if n < 1024:
+            return f"{n} B"
+        if n < 1024 * 1024:
+            return f"{n / 1024:.1f} KB"
+        if n < 1024 * 1024 * 1024:
+            return f"{n / (1024 * 1024):.1f} MB"
+        return f"{n / (1024 * 1024 * 1024):.2f} GB"
+
+    @staticmethod
+    def _fmt_speed(bps: float) -> str:
+        if bps <= 0:
+            return "-"
+        if bps < 1024:
+            return f"{bps:.0f} B/s"
+        if bps < 1024 * 1024:
+            return f"{bps / 1024:.1f} KB/s"
+        return f"{bps / (1024 * 1024):.1f} MB/s"
+
+    @staticmethod
+    def _fmt_duration(seconds: float) -> str:
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        if seconds < 3600:
+            m, s = divmod(int(seconds), 60)
+            return f"{m}m{s:02d}s"
+        h, rem = divmod(int(seconds), 3600)
+        m, _ = divmod(rem, 60)
+        return f"{h}h{m:02d}m"
+
+    def _make_bar(self, frac: float, width: int = 30) -> Any:
+        frac = max(0.0, min(1.0, frac))
+        filled = int(width * frac)
+        t = Text()
+        if filled >= width:
+            t.append("━" * width, style="bold green")
+        elif filled > 0:
+            t.append("━" * filled, style="bold cyan")
+            t.append("╸", style="cyan")
+            rest = width - filled - 1
+            if rest > 0:
+                t.append("─" * rest, style="dim")
+        else:
+            t.append("─" * width, style="dim")
+        return t
+
+    # ------------------------------------------------------------------
+    # Rich rendering
     # ------------------------------------------------------------------
 
     def _build_display(self) -> Any:  # pragma: no cover
-        """Construct the Rich renderable for the current state.
-
-        Returns:
-            A Rich renderable (Panel containing a Table).
-        """
         state = self.get_state()
+        parts: list[Any] = []
 
-        # Header summary
-        header = Text()
-        header.append(f"Tasks: {state['completed']}/{state['total']} done", style="bold green")
-        header.append(f"  |  failed: {state['failed']}", style="bold red")
-        header.append(f"  |  active: {state['active_count']}", style="bold cyan")
-        elapsed = state["elapsed"]
-        header.append(f"  |  elapsed: {elapsed:.1f}s", style="dim")
-        if state["cookie_source"]:
-            header.append(f"  |  cookie: {state['cookie_source']}", style="yellow")
-        header.append(
-            f"  |  API: {state['api_calls']} calls / {state['api_fails']} fail",
-            style="dim",
+        # ---- Header: summary stats ----
+        hdr = Text()
+        hdr.append(f" 任务 {state['completed']}/{state['total']}", style="bold green")
+        if state["failed"] > 0:
+            hdr.append(f"  失败 {state['failed']}", style="bold red")
+        hdr.append(
+            f"  |  耗时 {self._fmt_duration(state['elapsed'])}", style="dim",
         )
-
-        # Active tasks table
-        table = Table(box=box.SIMPLE, show_header=True, expand=True)
-        table.add_column("Task ID", style="cyan", no_wrap=True)
-        table.add_column("Status", style="bold")
-        table.add_column("Progress")
-        table.add_column("URL", overflow="fold")
-
         with self._lock:
+            tb = self._total_bytes
+        if tb > 0:
+            avg_spd = tb / state["elapsed"] if state["elapsed"] > 0 else 0
+            hdr.append(f"  |  ↓ {self._fmt_bytes(tb)}", style="cyan")
+            if avg_spd > 0:
+                hdr.append(f" ({self._fmt_speed(avg_spd)})", style="dim cyan")
+        if state["cookie_source"]:
+            hdr.append(
+                f"  |  cookie: {state['cookie_source']}", style="dim yellow",
+            )
+        parts.append(hdr)
+
+        # ---- Batch progress bar ----
+        with self._lock:
+            b_done, b_total = 0, 0
             for tid, task in self._tasks.items():
-                if task.status not in ("running", "pending"):
-                    continue
-                prog = self._task_progress.get(tid)
-                prog_str = f"{prog[0]}/{prog[1]}" if prog else "-"
-                status_style = "green" if task.status == "running" else "dim"
-                table.add_row(
-                    tid,
-                    Text(task.status, style=status_style),
-                    prog_str,
-                    task.url,
-                )
+                if task.status == "running":
+                    prog = self._task_progress.get(tid)
+                    if prog:
+                        b_done, b_total = prog
+                    break
 
-        from rich.console import Group  # local import to avoid top-level dep
+        if b_total > 0:
+            pct = b_done / b_total
+            bar = self._make_bar(pct, 40)
+            ln = Text(" ")
+            ln.append_text(bar)
+            ln.append(f"  {b_done}/{b_total}", style="bold")
+            ln.append(f" ({pct * 100:.1f}%)", style="dim")
+            if 0 < pct < 1.0:
+                eta = state["elapsed"] / pct - state["elapsed"]
+                ln.append(f"  ~{self._fmt_duration(eta)}", style="dim")
+            parts.append(ln)
 
+        parts.append(Text(""))
+
+        # ---- Current item detail ----
         with self._lock:
-            recent = self._done_log[-8:]
+            item = dict(self._current_item) if self._current_item else None
+            status_msg = self._status_message
+
+        if item:
+            ih = Text()
+            ih.append(" ▶ ", style="bold cyan")
+            if item["author"]:
+                ih.append(f"@{item['author']}", style="bold")
+                ih.append("  ", style="dim")
+            if item["total"] > 0:
+                ih.append(
+                    f"作品 {item['index']}/{item['total']}", style="yellow",
+                )
+            parts.append(ih)
+
+            if item["desc"]:
+                parts.append(Text(f"   {item['desc']}", style="italic"))
+
+            if item["bytes_total"] > 0:
+                fpct = min(item["bytes_done"] / item["bytes_total"], 1.0)
+                ftime = time.monotonic() - item["file_start"]
+                spd = item["bytes_done"] / ftime if ftime > 0.1 else 0
+
+                fl = Text("   ")
+                if item["file_name"]:
+                    fl.append(f"{item['file_name']}  ", style="dim")
+                fl.append_text(self._make_bar(fpct, 20))
+                fl.append(f" {fpct * 100:.0f}%", style="bold")
+                fl.append(
+                    f"  {self._fmt_bytes(item['bytes_done'])}"
+                    f"/{self._fmt_bytes(item['bytes_total'])}",
+                    style="dim",
+                )
+                if spd > 0:
+                    fl.append(f"  {self._fmt_speed(spd)}", style="cyan")
+                parts.append(fl)
+            elif item["bytes_done"] > 0:
+                fl = Text("   ")
+                if item["file_name"]:
+                    fl.append(f"{item['file_name']}  ", style="dim")
+                fl.append(
+                    f"↓ {self._fmt_bytes(item['bytes_done'])}", style="cyan",
+                )
+                parts.append(fl)
+        elif status_msg:
+            parts.append(Text(f" ⋯ {status_msg}", style="dim cyan"))
+
+        parts.append(Text(""))
+
+        # ---- Done log ----
+        with self._lock:
+            recent = list(self._done_log[-8:])
 
         if recent:
-            done_table = Table(box=box.SIMPLE, show_header=False, expand=True)
-            done_table.add_column("", width=4)
-            done_table.add_column("", overflow="fold")
-            done_table.add_column("")
-            for entry in recent:
-                icon = Text("  ✓ ", style="green") if entry.success else Text("  ✗ ", style="red")
-                done_table.add_row(icon, entry.label, entry.detail)
-            return Panel(
-                Group(header, "", table, "", Text("最近完成:", style="dim"), done_table),
-                subtitle="[dim]douyin-downloader[/dim]",
-                expand=True,
+            parts.append(Text(" 最近完成", style="dim"))
+            dtbl = Table(
+                box=box.SIMPLE, show_header=False, expand=True, padding=(0, 1),
             )
+            dtbl.add_column("", width=4)
+            dtbl.add_column("", overflow="fold")
+            dtbl.add_column("", justify="right")
+            for e in recent:
+                icon = (
+                    Text("  ✓ ", style="green")
+                    if e.success
+                    else Text("  ✗ ", style="red")
+                )
+                dtbl.add_row(icon, e.label, e.detail)
+            parts.append(dtbl)
 
         return Panel(
-            Group(header, "", table),
+            Group(*parts),
             subtitle="[dim]douyin-downloader[/dim]",
             expand=True,
         )

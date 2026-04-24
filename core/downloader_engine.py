@@ -3,6 +3,7 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 import aiohttp
 
@@ -45,7 +46,10 @@ class DownloadEngine:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    async def download_media(self, aweme: dict, parent_span: TraceSpan) -> DownloadResult:
+    async def download_media(
+        self, aweme: dict, parent_span: TraceSpan,
+        on_progress: Callable[[int, int, str], None] | None = None,
+    ) -> DownloadResult:
         task = DownloadTask(
             task_id=aweme.get("aweme_id", "unknown"),
             trace_id=parent_span.trace_id,
@@ -55,6 +59,7 @@ class DownloadEngine:
         t0 = time.time()
         save_dir = self._build_save_dir(aweme)
         files_written = 0
+        total_bytes = 0
         success = True
         folder_name = save_dir.name
 
@@ -64,10 +69,13 @@ class DownloadEngine:
                 best_url, fallbacks, ext = self._get_best_image_url(img)
                 if best_url:
                     path = save_dir / f"image_{i+1}.{ext}"
-                    ok = await self.download_file(best_url, path, parent_span,
-                                                  fallback_urls=fallbacks)
+                    ok, nbytes = await self.download_file(
+                        best_url, path, parent_span,
+                        fallback_urls=fallbacks, on_progress=on_progress,
+                    )
                     if ok:
                         files_written += 1
+                        total_bytes += nbytes
                     else:
                         success = False
                     await asyncio.sleep(0.3)
@@ -76,10 +84,13 @@ class DownloadEngine:
             if video_url:
                 fallbacks = self._get_video_fallbacks(aweme)
                 path = save_dir / f"{folder_name}.mp4"
-                ok = await self.download_file(video_url, path, parent_span,
-                                              fallback_urls=fallbacks)
+                ok, nbytes = await self.download_file(
+                    video_url, path, parent_span,
+                    fallback_urls=fallbacks, on_progress=on_progress,
+                )
                 if ok:
                     files_written += 1
+                    total_bytes += nbytes
                 else:
                     success = False
 
@@ -87,16 +98,24 @@ class DownloadEngine:
                 music_url = self._get_music_url(aweme)
                 if music_url:
                     path = save_dir / f"{folder_name}_music.mp3"
-                    if await self.download_file(music_url, path, parent_span):
+                    ok, nbytes = await self.download_file(
+                        music_url, path, parent_span, on_progress=on_progress,
+                    )
+                    if ok:
                         files_written += 1
+                        total_bytes += nbytes
 
         if self._download_cover:
             cover_url, cover_fallbacks = self._get_cover_urls(aweme)
             if cover_url:
                 path = save_dir / f"{folder_name}_cover.jpg"
-                if await self.download_file(cover_url, path, parent_span,
-                                            fallback_urls=cover_fallbacks):
+                ok, nbytes = await self.download_file(
+                    cover_url, path, parent_span,
+                    fallback_urls=cover_fallbacks, on_progress=on_progress,
+                )
+                if ok:
                     files_written += 1
+                    total_bytes += nbytes
 
         if self._download_json:
             json_path = save_dir / f"{folder_name}_data.json"
@@ -108,14 +127,17 @@ class DownloadEngine:
         return DownloadResult(
             task=task, success=success,
             files_written=files_written, elapsed=time.time() - t0,
+            bytes_downloaded=total_bytes,
         )
 
-    async def download_file(self, url: str, path: Path,
-                            parent_span: TraceSpan,
-                            fallback_urls: list[str] | None = None) -> bool:
+    async def download_file(
+        self, url: str, path: Path, parent_span: TraceSpan,
+        fallback_urls: list[str] | None = None,
+        on_progress: Callable[[int, int, str], None] | None = None,
+    ) -> tuple[bool, int]:
         if path.exists() and path.stat().st_size > 0:
             self._tracer.add_event(parent_span, "file_skip", path=str(path.name))
-            return True
+            return (True, 0)
 
         await self._ensure_session()
         async with self._semaphore:
@@ -125,12 +147,28 @@ class DownloadEngine:
                     u = u.replace("playwm", "play")
                     async with self._session.get(u) as resp:
                         if resp.status == 200:
-                            data = await resp.read()
+                            content_length = int(
+                                resp.headers.get("Content-Length", 0)
+                            )
+                            chunks: list[bytes] = []
+                            bytes_read = 0
+                            if on_progress:
+                                on_progress(0, content_length, path.name)
+                            async for chunk in resp.content.iter_chunked(65536):
+                                chunks.append(chunk)
+                                bytes_read += len(chunk)
+                                if on_progress:
+                                    on_progress(
+                                        bytes_read, content_length, path.name,
+                                    )
+                            data = b"".join(chunks)
                             path.parent.mkdir(parents=True, exist_ok=True)
                             path.write_bytes(data)
-                            self._log.debug("文件已下载", file=path.name,
-                                            size_kb=len(data) // 1024)
-                            return True
+                            self._log.debug(
+                                "文件已下载", file=path.name,
+                                size_kb=len(data) // 1024,
+                            )
+                            return (True, len(data))
                         elif resp.status == 403 and i < len(all_urls) - 1:
                             continue
                 except (aiohttp.ClientError, asyncio.TimeoutError):
@@ -138,11 +176,9 @@ class DownloadEngine:
                         continue
 
         self._log.warn("文件下载失败", file=path.name, urls_tried=len(all_urls))
-        return False
+        return (False, 0)
 
     def _get_best_image_url(self, img: dict) -> tuple[str | None, list[str], str]:
-        """从图片数据中选择最高质量 URL。优先 download_url_list（无压缩原图）。
-        返回 (best_url, fallback_urls, extension)"""
         dl_urls = img.get("download_url_list", [])
         url_list = img.get("url_list", [])
 
@@ -201,7 +237,6 @@ class DownloadEngine:
         return play_url if isinstance(play_url, str) else None
 
     def _get_cover_urls(self, aweme: dict) -> tuple[str | None, list[str]]:
-        """获取封面 URL + fallback 列表，尝试多个来源"""
         all_urls = []
         for key in ("origin_cover", "cover", "dynamic_cover"):
             src = aweme.get("video", {}).get(key, {})

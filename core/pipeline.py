@@ -77,6 +77,9 @@ class DownloadPipeline:
         self._log = logger
         self._dashboard = dashboard
 
+    def _progress_cb(self, done: int, total: int, name: str) -> None:
+        self._dashboard.update_bytes_progress(done, total, name)
+
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
@@ -230,35 +233,38 @@ class DownloadPipeline:
     # ------------------------------------------------------------------
 
     async def _handle_single(self, task: DownloadTask, root: TraceSpan) -> None:
-        """Download a single video or image post.
-
-        Args:
-            task: Task with ``extracted_id`` set to the aweme ID.
-            root: Root trace span for this task.
-        """
         with self._tracer.context_span(
             root, "fetch_info", aweme_id=task.extracted_id
         ) as span:
             info = await self._api.get_video_info(task.extracted_id, span)
             self._dashboard.record_api_call(True)
+
+        desc = (info.get("desc") or "")[:40]
+        author = info.get("author", {}).get("nickname", "")
+        self._dashboard.set_current_item(desc=desc, author=author, index=1, total=1)
+
         with self._tracer.context_span(root, "download_media") as span:
-            result = await self._engine.download_media(info, span)
-            task.stats["downloaded"] = 1 if result.success else 0
+            result = await self._engine.download_media(
+                info, span, on_progress=self._progress_cb,
+            )
+
+        self._dashboard.clear_current_item()
+        self._dashboard.add_bytes(result.bytes_downloaded)
+        task.stats["downloaded"] = 1 if result.success else 0
+
+        self._dashboard.log_item_done(
+            desc or task.url[:50],
+            result.success,
+            f"{result.files_written} 文件, {result.elapsed:.1f}s" if result.success
+            else (result.error or "下载失败"),
+        )
 
     async def _handle_user(self, task: DownloadTask, root: TraceSpan) -> None:
-        """Download all posts (or liked posts) for a user.
-
-        Paginates through the API until no more items are returned,
-        respecting the configured post count limit.
-
-        Args:
-            task: Task with ``extracted_id`` set to the user's sec_uid.
-            root: Root trace span for this task.
-        """
         downloaded = 0
         cursor = 0
         all_posts: list[dict] = []
 
+        self._dashboard.set_status("正在获取作品列表…")
         with self._tracer.context_span(root, "fetch_all_posts") as fetch_span:
             while True:
                 if "post" in self._config.mode:
@@ -276,38 +282,113 @@ class DownloadPipeline:
                     break
                 all_posts.extend(aweme_list)
                 fetch_span.attributes["fetched"] = len(all_posts)
+                self._dashboard.set_status(
+                    f"正在获取作品列表… 已获取 {len(all_posts)} 个"
+                )
+                self._dashboard.refresh()
 
                 if not page.get("has_more"):
                     break
                 cursor = page.get("max_cursor", 0)
+        self._dashboard.clear_status()
 
         total = len(all_posts)
+        post_limit = self._config.number.get("post", 0)
+        effective_total = min(total, post_limit) if post_limit > 0 else total
+
         with self._tracer.context_span(root, "download_posts", total=total) as dl_span:
             for i, post in enumerate(all_posts):
-                post_limit = self._config.number.get("post", 0)
                 if post_limit > 0 and downloaded >= post_limit:
                     break
-                desc = (post.get("desc") or "")[:30]
+                desc = (post.get("desc") or "")[:40]
+                author = post.get("author", {}).get("nickname", "")
+                self._dashboard.set_current_item(
+                    desc=desc, author=author,
+                    index=i + 1, total=effective_total,
+                )
                 with self._tracer.context_span(
                     dl_span,
                     "download_media",
                     index=i + 1,
                     aweme_id=post.get("aweme_id"),
                 ) as media_span:
-                    result = await self._engine.download_media(post, media_span)
+                    result = await self._engine.download_media(
+                        post, media_span, on_progress=self._progress_cb,
+                    )
+                    self._dashboard.clear_current_item()
+                    self._dashboard.add_bytes(result.bytes_downloaded)
                     if result.success:
                         downloaded += 1
-                        self._dashboard.log_done(
+                        self._dashboard.log_item_done(
                             desc or f"作品 {i+1}",
                             True,
                             f"{result.files_written} 文件, {result.elapsed:.1f}s",
                         )
                     else:
-                        self._dashboard.log_done(
+                        self._dashboard.log_item_done(
                             desc or f"作品 {i+1}",
                             False,
                             result.error or "下载失败",
                             trace_id=media_span.trace_id,
+                        )
+                self._dashboard.update_progress(task, i + 1, effective_total)
+                self._dashboard.refresh()
+
+        task.stats["downloaded"] = downloaded
+        task.stats["total"] = total
+
+    async def _handle_mix(self, task: DownloadTask, root: TraceSpan) -> None:
+        downloaded = 0
+        cursor = 0
+        all_posts: list[dict] = []
+
+        self._dashboard.set_status("正在获取合集列表…")
+        with self._tracer.context_span(root, "fetch_all_mix") as fetch_span:
+            while True:
+                page = await self._api.get_mix_items(
+                    task.extracted_id, cursor, fetch_span,
+                )
+                self._dashboard.record_api_call(True)
+                aweme_list = page.get("aweme_list", [])
+                if not aweme_list:
+                    break
+                all_posts.extend(aweme_list)
+                self._dashboard.set_status(
+                    f"正在获取合集列表… 已获取 {len(all_posts)} 个"
+                )
+                self._dashboard.refresh()
+                if not page.get("has_more"):
+                    break
+                cursor = page.get("cursor", 0)
+        self._dashboard.clear_status()
+
+        total = len(all_posts)
+        with self._tracer.context_span(root, "download_posts", total=total) as dl_span:
+            for i, post in enumerate(all_posts):
+                desc = (post.get("desc") or "")[:40]
+                author = post.get("author", {}).get("nickname", "")
+                self._dashboard.set_current_item(
+                    desc=desc, author=author, index=i + 1, total=total,
+                )
+                with self._tracer.context_span(
+                    dl_span, "download_media",
+                    index=i + 1, aweme_id=post.get("aweme_id"),
+                ) as span:
+                    result = await self._engine.download_media(
+                        post, span, on_progress=self._progress_cb,
+                    )
+                    self._dashboard.clear_current_item()
+                    self._dashboard.add_bytes(result.bytes_downloaded)
+                    if result.success:
+                        downloaded += 1
+                        self._dashboard.log_item_done(
+                            desc or f"作品 {i+1}", True,
+                            f"{result.files_written} 文件, {result.elapsed:.1f}s",
+                        )
+                    else:
+                        self._dashboard.log_item_done(
+                            desc or f"作品 {i+1}", False,
+                            result.error or "下载失败", trace_id=span.trace_id,
                         )
                 self._dashboard.update_progress(task, i + 1, total)
                 self._dashboard.refresh()
@@ -315,59 +396,64 @@ class DownloadPipeline:
         task.stats["downloaded"] = downloaded
         task.stats["total"] = total
 
-    async def _handle_mix(self, task: DownloadTask, root: TraceSpan) -> None:
-        """Download all posts in a mix (playlist).
-
-        Args:
-            task: Task with ``extracted_id`` set to the mix ID.
-            root: Root trace span for this task.
-        """
-        downloaded = 0
-        cursor = 0
-
-        while True:
-            page = await self._api.get_mix_items(task.extracted_id, cursor, root)
-            self._dashboard.record_api_call(True)
-            aweme_list = page.get("aweme_list", [])
-            if not aweme_list:
-                break
-            for post in aweme_list:
-                with self._tracer.context_span(root, "download_media") as span:
-                    result = await self._engine.download_media(post, span)
-                    if result.success:
-                        downloaded += 1
-            if not page.get("has_more"):
-                break
-            cursor = page.get("cursor", 0)
-
-        task.stats["downloaded"] = downloaded
-
     async def _handle_music(self, task: DownloadTask, root: TraceSpan) -> None:
-        """Download all posts associated with a music track.
-
-        Args:
-            task: Task with ``extracted_id`` set to the music ID.
-            root: Root trace span for this task.
-        """
         downloaded = 0
         cursor = 0
+        all_posts: list[dict] = []
 
-        while True:
-            page = await self._api.get_music_items(task.extracted_id, cursor, root)
-            self._dashboard.record_api_call(True)
-            aweme_list = page.get("aweme_list", [])
-            if not aweme_list:
-                break
-            for post in aweme_list:
-                with self._tracer.context_span(root, "download_media") as span:
-                    result = await self._engine.download_media(post, span)
+        self._dashboard.set_status("正在获取音乐作品列表…")
+        with self._tracer.context_span(root, "fetch_all_music") as fetch_span:
+            while True:
+                page = await self._api.get_music_items(
+                    task.extracted_id, cursor, fetch_span,
+                )
+                self._dashboard.record_api_call(True)
+                aweme_list = page.get("aweme_list", [])
+                if not aweme_list:
+                    break
+                all_posts.extend(aweme_list)
+                self._dashboard.set_status(
+                    f"正在获取音乐作品列表… 已获取 {len(all_posts)} 个"
+                )
+                self._dashboard.refresh()
+                if not page.get("has_more"):
+                    break
+                cursor = page.get("cursor", 0)
+        self._dashboard.clear_status()
+
+        total = len(all_posts)
+        with self._tracer.context_span(root, "download_posts", total=total) as dl_span:
+            for i, post in enumerate(all_posts):
+                desc = (post.get("desc") or "")[:40]
+                author = post.get("author", {}).get("nickname", "")
+                self._dashboard.set_current_item(
+                    desc=desc, author=author, index=i + 1, total=total,
+                )
+                with self._tracer.context_span(
+                    dl_span, "download_media",
+                    index=i + 1, aweme_id=post.get("aweme_id"),
+                ) as span:
+                    result = await self._engine.download_media(
+                        post, span, on_progress=self._progress_cb,
+                    )
+                    self._dashboard.clear_current_item()
+                    self._dashboard.add_bytes(result.bytes_downloaded)
                     if result.success:
                         downloaded += 1
-            if not page.get("has_more"):
-                break
-            cursor = page.get("cursor", 0)
+                        self._dashboard.log_item_done(
+                            desc or f"作品 {i+1}", True,
+                            f"{result.files_written} 文件, {result.elapsed:.1f}s",
+                        )
+                    else:
+                        self._dashboard.log_item_done(
+                            desc or f"作品 {i+1}", False,
+                            result.error or "下载失败", trace_id=span.trace_id,
+                        )
+                self._dashboard.update_progress(task, i + 1, total)
+                self._dashboard.refresh()
 
         task.stats["downloaded"] = downloaded
+        task.stats["total"] = total
 
     # ------------------------------------------------------------------
     # Short-URL resolution

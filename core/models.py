@@ -70,3 +70,4 @@ class DownloadResult:
     files_written: int
     elapsed: float
     error: str | None = None
+    bytes_downloaded: int = 0
