@@ -87,6 +87,13 @@ class DownloadPipeline:
                     if match2 is None:
                         self._log.warn("短链解析后仍无法识别", url=resolved)
                         continue
+                    if match2[0].name != platform.name:
+                        self._log.warn(
+                            "短链跨平台跳转",
+                            orig=platform.name,
+                            resolved=match2[0].name,
+                            url=resolved,
+                        )
                     platform, client, ref = match2
 
                 # Inject user-mode into ContentRef extra for douyin user.
@@ -141,7 +148,8 @@ class DownloadPipeline:
         except CookieExpiredError:
             self._tracer.add_event(root, "cookie_expired")
             self._log.warn("Cookie 失效，重新获取...")
-            await self._cookie_mgr.ensure_valid_cookie()
+            cookie_state = await self._cookie_mgr.ensure_valid_cookie()
+            self._dashboard.set_cookie_state(cookie_state)
             task.stats["_ref"] = ref
             task.stats["_client"] = client
             await self._execute_task(task)
@@ -236,6 +244,12 @@ class DownloadPipeline:
         self._dashboard.clear_status()
 
         total = len(all_items)
+        # Behavioral note: the old pipeline only honored a per-type limit
+        # for user posts (keyed as "post" in config.number). This
+        # generalization lets mix/music/collection/search/topic also
+        # respect a config.number[<content_type>] cap if the user sets
+        # one. Missing keys default to 0 which means "no limit",
+        # preserving old behavior for configs that only set `post`.
         limit_key = "post" if ref.content_type == "user" else ref.content_type
         limit = self._config.number.get(limit_key, 0)
         effective_total = min(total, limit) if limit > 0 else total
