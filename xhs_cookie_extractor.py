@@ -2,13 +2,22 @@
 """Interactive XHS (小红书) cookie extractor.
 
 Launches a Playwright-controlled Chromium window, navigates to
-https://www.xiaohongshu.com, waits for the user to log in via QR-code,
-harvests the authenticated cookies, and writes the result back into
-``config.yml`` under ``cookies.xhs``.
+https://www.xiaohongshu.com, waits for the user to scan the QR code and
+log in, then harvests the authenticated cookies and writes the result
+back into ``config.yml`` under ``cookies.xhs``.
 
 Usage:
     python xhs_cookie_extractor.py              # uses ./config.yml
     python xhs_cookie_extractor.py other.yml    # specify a config file
+
+Why we require manual confirmation instead of auto-detecting login:
+    Fields like ``a1`` / ``web_session`` / ``webId`` are issued by XHS
+    to guest visitors too — ``web_session`` in particular is *not* a
+    login-session marker despite the name. Auto-detecting login by
+    waiting for these fields to appear would false-positive on guests.
+    Rather than guess which combination of cookies proves login, we ask
+    the user to press Enter after they've scanned the QR code. Simple
+    and robust.
 """
 
 from __future__ import annotations
@@ -31,10 +40,7 @@ except ImportError:
     sys.exit(1)
 
 
-# Cookie fields the XHS signer / API need.
 REQUIRED_FIELDS = {"a1", "web_session", "webId"}
-
-# Nice-to-have fields (logged but not required).
 OPTIONAL_FIELDS = {"gid", "xsecappid", "websectiga", "customer-sso-sid"}
 
 
@@ -44,9 +50,14 @@ def _cookies_to_header_string(cookies: list[dict]) -> str:
 
 
 def _has_required(cookies: list[dict]) -> bool:
-    """Return True iff the harvest contains the fields the signer needs."""
     names = {c["name"] for c in cookies}
     return REQUIRED_FIELDS.issubset(names)
+
+
+async def _wait_for_enter() -> None:
+    """Block until the user presses Enter, without blocking the loop."""
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, input)
 
 
 async def _harvest(config_path: Path) -> None:
@@ -63,7 +74,6 @@ async def _harvest(config_path: Path) -> None:
                 "Chrome/122.0.0.0 Safari/537.36"
             ),
         )
-        # Hide webdriver flag so XHS doesn't block automated Chromium.
         await context.add_init_script(
             "Object.defineProperty(navigator, 'webdriver', "
             "{ get: () => undefined });"
@@ -72,35 +82,31 @@ async def _harvest(config_path: Path) -> None:
         await page.goto("https://www.xiaohongshu.com/explore")
 
         print("=" * 60)
-        print("请在浏览器里扫码登录 XHS。")
-        print("登录完成后脚本会自动提取 cookie 并写入 config.yml。")
-        print("（最长等待 5 分钟；登录后可保持浏览器打开不动）")
+        print("请在浏览器里扫码登录 XHS（手机 App → 右上角 → 扫一扫）")
+        print()
+        print("⚠️  重要：务必完成扫码并在浏览器里看到你的头像/主页后，")
+        print("   再回到这里按【回车】，否则抓到的是游客 cookie，不能用于下载。")
         print("=" * 60)
 
-        deadline = asyncio.get_event_loop().time() + 300
-        harvested: list[dict] | None = None
-        while asyncio.get_event_loop().time() < deadline:
-            cookies = await context.cookies("https://www.xiaohongshu.com")
-            if _has_required(cookies):
-                harvested = cookies
-                break
-            await asyncio.sleep(3)
+        await _wait_for_enter()
 
+        cookies = await context.cookies("https://www.xiaohongshu.com")
         await context.close()
         await browser.close()
 
-    if harvested is None:
+    if not _has_required(cookies):
+        missing = REQUIRED_FIELDS - {c["name"] for c in cookies}
         print(
-            "ERROR: 未在 5 分钟内检测到有效登录"
-            "（缺少 a1 / web_session / webId）",
+            f"ERROR: cookie 缺少关键字段 {sorted(missing)}，"
+            f"请确认已完成扫码登录后重试。",
             file=sys.stderr,
         )
         sys.exit(2)
 
-    cookie_str = _cookies_to_header_string(harvested)
+    cookie_str = _cookies_to_header_string(cookies)
     _write_cookie_to_config(config_path, cookie_str)
-    names = sorted({c["name"] for c in harvested})
-    print(f"\n成功：已抓取 {len(harvested)} 个 cookie，写入 {config_path}")
+    names = sorted({c["name"] for c in cookies})
+    print(f"\n成功：已抓取 {len(cookies)} 个 cookie，写入 {config_path}")
     print(f"  关键字段: {', '.join(sorted(REQUIRED_FIELDS))}")
     extra = [n for n in names if n in OPTIONAL_FIELDS]
     if extra:
@@ -122,8 +128,6 @@ def _write_cookie_to_config(config_path: Path, cookie_str: str) -> None:
     cookies_block = data.get("cookies")
     if not isinstance(cookies_block, dict):
         cookies_block = {}
-        # Migrate legacy `cookie:` → `cookies.douyin` so the new dict
-        # form is self-consistent after we add the xhs key.
         legacy = data.pop("cookie", None)
         if isinstance(legacy, str) and legacy.strip():
             cookies_block["douyin"] = legacy
