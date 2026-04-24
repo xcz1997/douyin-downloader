@@ -32,6 +32,7 @@ class CookieState:
     value: str
     source: str
     obtained_at: float
+    platform: str = "douyin"
     is_valid: bool = True
     last_checked: float = 0
 

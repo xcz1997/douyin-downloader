@@ -69,3 +69,21 @@ def test_download_result():
     result = DownloadResult(task=task, success=True, files_written=3, elapsed=1.5)
     assert result.success is True
     assert result.error is None
+
+
+def test_cookie_state_defaults_to_douyin():
+    from core.models import CookieState
+    s = CookieState(
+        value="msToken=abc", source="config", obtained_at=1700000000.0,
+    )
+    assert s.platform == "douyin"
+    assert s.is_valid is True
+
+
+def test_cookie_state_explicit_platform():
+    from core.models import CookieState
+    s = CookieState(
+        value="web_session=xxx", source="config",
+        obtained_at=1700000000.0, platform="xhs",
+    )
+    assert s.platform == "xhs"
