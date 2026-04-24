@@ -9,7 +9,7 @@ def _make_config(**overrides):
     defaults = dict(
         links=["https://example.com"],
         save_path=Path("./dl"),
-        cookies=None,
+        cookies={},
         cookie_mode="none",
         mode=["post"],
         number={"post": 0},
@@ -51,7 +51,7 @@ def test_validate_with_ttwid():
 
 
 def test_cookie_state_from_config():
-    config = _make_config(cookies="ttwid=abc; sessionid=xyz", cookie_mode="string")
+    config = _make_config(cookies={"douyin": "ttwid=abc; sessionid=xyz"}, cookie_mode="string")
     mgr = CookieManager(config, tracer=None, logger=MagicMock())
     state = mgr._state_from_config()
     assert state is not None
@@ -60,7 +60,7 @@ def test_cookie_state_from_config():
 
 
 def test_cookie_state_from_config_none():
-    config = _make_config(cookies=None, cookie_mode="none")
+    config = _make_config(cookies={}, cookie_mode="none")
     mgr = CookieManager(config, tracer=None, logger=MagicMock())
     state = mgr._state_from_config()
     assert state is None

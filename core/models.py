@@ -13,7 +13,7 @@ class DownloadOptions:
 class AppConfig:
     links: list[str]
     save_path: Path
-    cookies: str | dict | None
+    cookies: dict[str, str]
     cookie_mode: str
     mode: list[str]
     number: dict

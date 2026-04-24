@@ -55,22 +55,30 @@ _FIELD_RENAMES: dict[str, str] = {
 }
 
 
-def _detect_cookie_mode(cookie_value: Any) -> str:
-    """Derive cookie_mode from the raw cookie value.
+def _cookie_mode_from_dict(
+    cookies: dict[str, str], raw_data: dict[str, object],
+) -> str:
+    """Derive a legacy-compatible cookie_mode from the final cookies dict.
 
     Args:
-        cookie_value: The raw value from the config file.
+        cookies: Post-migration ``{platform: cookie_string}`` dict.
+        raw_data: The full (post-migration) config dict, used for future
+            extensibility.
 
     Returns:
-        One of "dict", "auto", "string", or "none".
+        One of ``"dict"``, ``"auto"``, ``"string"``, ``"none"``.
     """
-    if isinstance(cookie_value, dict):
+    if not cookies:
+        return "none"
+    # Explicit multi-platform dict → "dict"; single-platform (from old
+    # format migration) → "string" so downstream CookieManager keeps
+    # its single-cookie behavior unless it opts in.
+    if len(cookies) > 1:
         return "dict"
-    if cookie_value == "auto":
+    sole_value = next(iter(cookies.values()), "")
+    if sole_value == "auto":
         return "auto"
-    if isinstance(cookie_value, str) and cookie_value.strip():
-        return "string"
-    return "none"
+    return "string"
 
 
 def _migrate_old_format(raw: dict[str, Any]) -> dict[str, Any]:
@@ -97,11 +105,33 @@ def _migrate_old_format(raw: dict[str, Any]) -> dict[str, Any]:
             else:
                 data.pop(old_key)
 
-    # "cookies" (old name) → "cookie" (new name)
-    if "cookies" in data and "cookie" not in data:
-        data["cookie"] = data.pop("cookies")
-    elif "cookies" in data:
-        data.pop("cookies")
+    # Cookie handling: three supported forms
+    # (a) new multi-platform:   cookies: {douyin: "...", xhs: "..."}
+    # (b) old single string:    cookie: "msToken=abc; ..."
+    # (c) legacy plural string: cookies: "msToken=abc; ..." (pre-v4.0)
+    # New (a) always wins; (b) and (c) migrate to {"douyin": "..."}.
+    new_cookies: dict[str, str] = {}
+
+    if "cookies" in data and isinstance(data["cookies"], dict):
+        # form (a) — keep as-is, drop legacy singular if it sneaked in
+        new_cookies = {k: v for k, v in data["cookies"].items() if v}
+        data.pop("cookie", None)
+    elif "cookies" in data and isinstance(data["cookies"], str):
+        # form (c) — plural string, migrate to douyin slot
+        if data["cookies"].strip():
+            new_cookies = {"douyin": data["cookies"]}
+        data.pop("cookie", None)
+    elif "cookie" in data and isinstance(data["cookie"], str):
+        # form (b) — singular string, migrate to douyin slot
+        if data["cookie"].strip():
+            new_cookies = {"douyin": data["cookie"]}
+    elif "cookie" in data and isinstance(data["cookie"], dict):
+        # tolerate someone who wrote dict under `cookie:` singular
+        new_cookies = {k: v for k, v in data["cookie"].items() if v}
+
+    data.pop("cookies", None)
+    data.pop("cookie", None)
+    data["cookies"] = new_cookies
 
     # Promote top-level download booleans into nested download block
     old_download_keys = {"music", "cover"}
@@ -242,24 +272,39 @@ class ConfigLoader:
         with dest.open("w", encoding="utf-8") as fh:
             yaml.dump(default_content, fh, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
-    def save_cookie(self, cookie_str: str) -> None:
-        """Update the ``cookie`` field in the config file on disk.
+    def save_cookie(self, cookie_str: str, platform: str = "douyin") -> None:
+        """Update the cookie for *platform* in the config file on disk.
 
-        Reads the file, updates the cookie value, and writes it back. Supports
-        both old-style (``cookies``) and new-style (``cookie``) keys.
+        Prefers the new ``cookies: {platform: ...}`` nested form when
+        the file already has it; falls back to singular ``cookie:`` form
+        only when the file has no ``cookies:`` block AND *platform* is
+        ``"douyin"`` (the historical default). Other platforms always
+        write under ``cookies.{platform}``.
 
         Args:
             cookie_str: New cookie string value to persist.
+            platform: Target platform identifier (default ``"douyin"``).
         """
         raw = self._read_yaml()
-        # Prefer the new key; fall back to whichever key exists
-        if "cookies" in raw and "cookie" not in raw:
-            raw["cookies"] = cookie_str
-        else:
+
+        if "cookies" in raw and isinstance(raw["cookies"], dict):
+            raw["cookies"][platform] = cookie_str
+        elif platform == "douyin" and isinstance(raw.get("cookie"), str):
             raw["cookie"] = cookie_str
+        else:
+            cookies_block = raw.setdefault("cookies", {})
+            if not isinstance(cookies_block, dict):
+                cookies_block = {}
+                raw["cookies"] = cookies_block
+            cookies_block[platform] = cookie_str
+            if platform == "douyin" and "cookie" in raw:
+                del raw["cookie"]
 
         with self._path.open("w", encoding="utf-8") as fh:
-            yaml.dump(raw, fh, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            yaml.dump(
+                raw, fh, allow_unicode=True,
+                default_flow_style=False, sort_keys=False,
+            )
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -307,8 +352,11 @@ class ConfigLoader:
         save_path = Path(data.get("save_path", "./downloads"))
 
         # Cookie / cookie_mode
-        cookie_value = data.get("cookie")
-        cookie_mode = _detect_cookie_mode(cookie_value)
+        # After migration, cookies is always dict[str, str] (possibly empty).
+        cookies_dict = data.get("cookies", {})
+        if not isinstance(cookies_dict, dict):
+            cookies_dict = {}
+        cookie_mode = _cookie_mode_from_dict(cookies_dict, data)
 
         # mode
         mode_raw = data.get("mode", ["post"])
@@ -338,7 +386,7 @@ class ConfigLoader:
         return AppConfig(
             links=links,
             save_path=save_path,
-            cookies=cookie_value,
+            cookies=cookies_dict,
             cookie_mode=cookie_mode,
             mode=mode,
             number=data.get("limit", {"post": 0}),

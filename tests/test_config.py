@@ -4,6 +4,80 @@ from core.config import ConfigLoader
 from core.models import AppConfig
 
 
+def test_cookies_new_multi_platform_format(tmp_path):
+    """New format: cookies:{douyin: ..., xhs: ...}"""
+    import yaml
+    from core.config import ConfigLoader
+
+    cfg_path = tmp_path / "config.yml"
+    cfg_path.write_text(yaml.safe_dump({
+        "links": ["https://www.douyin.com/video/123"],
+        "save_path": str(tmp_path),
+        "cookies": {
+            "douyin": "msToken=abc",
+            "xhs": "a1=xyz; web_session=qqq",
+        },
+    }), encoding="utf-8")
+
+    cfg = ConfigLoader(str(cfg_path)).load()
+    assert isinstance(cfg.cookies, dict)
+    assert cfg.cookies["douyin"] == "msToken=abc"
+    assert cfg.cookies["xhs"] == "a1=xyz; web_session=qqq"
+    assert cfg.cookie_mode == "dict"
+
+
+def test_cookie_old_single_format_migrates_to_douyin(tmp_path):
+    """Old `cookie: "..."` string field migrates to cookies.douyin."""
+    import yaml
+    from core.config import ConfigLoader
+
+    cfg_path = tmp_path / "config.yml"
+    cfg_path.write_text(yaml.safe_dump({
+        "links": ["https://www.douyin.com/video/123"],
+        "save_path": str(tmp_path),
+        "cookie": "msToken=abc; ttwid=xyz",
+    }), encoding="utf-8")
+
+    cfg = ConfigLoader(str(cfg_path)).load()
+    assert isinstance(cfg.cookies, dict)
+    assert cfg.cookies.get("douyin") == "msToken=abc; ttwid=xyz"
+    assert "xhs" not in cfg.cookies
+    assert cfg.cookie_mode == "string"
+
+
+def test_cookies_new_wins_over_cookie_old(tmp_path):
+    """When both `cookie:` and `cookies:` present, new wins."""
+    import yaml
+    from core.config import ConfigLoader
+
+    cfg_path = tmp_path / "config.yml"
+    cfg_path.write_text(yaml.safe_dump({
+        "links": ["https://www.douyin.com/video/123"],
+        "save_path": str(tmp_path),
+        "cookie": "legacy=old",
+        "cookies": {"douyin": "new=value"},
+    }), encoding="utf-8")
+
+    cfg = ConfigLoader(str(cfg_path)).load()
+    assert cfg.cookies["douyin"] == "new=value"
+
+
+def test_cookie_none_produces_empty_dict(tmp_path):
+    """No cookie in config → cookies is empty dict, cookie_mode=none."""
+    import yaml
+    from core.config import ConfigLoader
+
+    cfg_path = tmp_path / "config.yml"
+    cfg_path.write_text(yaml.safe_dump({
+        "links": ["https://www.douyin.com/video/123"],
+        "save_path": str(tmp_path),
+    }), encoding="utf-8")
+
+    cfg = ConfigLoader(str(cfg_path)).load()
+    assert cfg.cookies == {}
+    assert cfg.cookie_mode == "none"
+
+
 def _write_yaml(path: Path, data: dict):
     with open(path, "w", encoding="utf-8") as f:
         yaml.dump(data, f, allow_unicode=True)
