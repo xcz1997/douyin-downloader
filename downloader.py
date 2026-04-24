@@ -73,6 +73,7 @@ async def cmd_validate_cookie(config: AppConfig):
 async def cmd_download(config: AppConfig, args: argparse.Namespace):
     from core.platform import PlatformRegistry
     from core.platforms.douyin import DouyinPlatform, DouyinPlatformClient
+    from core.platforms.xhs import XHSPlatform, XHSPlatformClient
 
     session_id = uuid.uuid4().hex[:8]
     log_dir = Path("logs")
@@ -109,6 +110,7 @@ async def cmd_download(config: AppConfig, args: argparse.Namespace):
 
     registry = PlatformRegistry()
     registry.register(DouyinPlatform(), DouyinPlatformClient(api))
+    registry.register(XHSPlatform(), XHSPlatformClient())
 
     pipeline = DownloadPipeline(
         config=config, registry=registry, engine=engine,
@@ -116,11 +118,14 @@ async def cmd_download(config: AppConfig, args: argparse.Namespace):
         logger=dual_logger.get("pipeline"), dashboard=dashboard,
     )
 
-    # Cookie needs to flow into DouyinAPIClient; CookieManager would also
-    # push it during pipeline.run(), but we acquire it here so we can
-    # update the api client before any request is made.
-    cookie_state = await cookie_mgr.ensure_valid_cookie()
-    api.update_cookie(cookie_state)
+    # Acquire the Douyin cookie up-front so DouyinAPIClient has credentials
+    # before pipeline.run() fires any request. XHS cookie is picked up
+    # lazily per-task (once Plan 3 ships the real XHSAPIClient).
+    try:
+        cookie_state = await cookie_mgr.ensure_valid_cookie(platform="douyin")
+        api.update_cookie(cookie_state)
+    except Exception as exc:
+        log.warn("抖音 Cookie 获取失败（若本次只下载 XHS 可忽略）", error=str(exc))
 
     if not args.no_dashboard:
         dashboard.start()

@@ -100,3 +100,29 @@ class XHSPlatform:
             )
 
         return None
+
+
+class XHSPlatformClient:
+    """Stage A placeholder. Real implementation lands in Plan 3.
+
+    Exists so DownloadPipeline can detect "XHS URL matched but downloader
+    not yet wired" and report a clear error instead of silently skipping.
+    """
+
+    async def resolve_short_url(self, url: str) -> str:
+        raise NotImplementedError(
+            "XHS short URL resolution not yet implemented "
+            "(pending Plan 3 Stage B)"
+        )
+
+    async def fetch_single(self, ref, span):
+        raise NotImplementedError(
+            "XHS single-note fetch not yet implemented "
+            "(pending Plan 3 Stage B)"
+        )
+
+    async def fetch_list(self, ref, cursor, span):
+        raise NotImplementedError(
+            "XHS list fetch not yet implemented "
+            "(pending Plan 3 Stage B)"
+        )
