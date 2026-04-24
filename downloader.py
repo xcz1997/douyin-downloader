@@ -71,6 +71,9 @@ async def cmd_validate_cookie(config: AppConfig):
 
 
 async def cmd_download(config: AppConfig, args: argparse.Namespace):
+    from core.platform import PlatformRegistry
+    from core.platforms.douyin import DouyinPlatform, DouyinPlatformClient
+
     session_id = uuid.uuid4().hex[:8]
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
@@ -104,11 +107,20 @@ async def cmd_download(config: AppConfig, args: argparse.Namespace):
         concurrency=config.thread,
     )
 
+    registry = PlatformRegistry()
+    registry.register(DouyinPlatform(), DouyinPlatformClient(api))
+
     pipeline = DownloadPipeline(
-        config=config, api=api, engine=engine,
+        config=config, registry=registry, engine=engine,
         cookie_mgr=cookie_mgr, tracer=tracer,
         logger=dual_logger.get("pipeline"), dashboard=dashboard,
     )
+
+    # Cookie needs to flow into DouyinAPIClient; CookieManager would also
+    # push it during pipeline.run(), but we acquire it here so we can
+    # update the api client before any request is made.
+    cookie_state = await cookie_mgr.ensure_valid_cookie()
+    api.update_cookie(cookie_state)
 
     if not args.no_dashboard:
         dashboard.start()
