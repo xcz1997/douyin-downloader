@@ -2,29 +2,34 @@
 """Interactive XHS (小红书) cookie extractor with in-terminal QR code.
 
 Flow:
-    1. Launch headless Chromium, open https://www.xiaohongshu.com, click
-       the login button so the QR-code dialog is rendered.
-    2. Screenshot the page, feed bytes to OpenCV's QRCodeDetector to
-       decode the QR payload (a one-time login URL).
-    3. Re-emit the decoded payload as a Unicode half-block QR in the
-       terminal using the `qrcode` library.
-    4. Poll for QR changes every 2 s — XHS rotates the QR roughly once
-       a minute, so a scannable code is always on screen.
-    5. User scans with the Xiaohongshu mobile app, waits for in-app
+    1. Launch headless Chromium, open https://www.xiaohongshu.com.
+    2. Pull the login QR from the DOM — XHS embeds it as a base64
+       data URL in ``img.qrcode-img``. We decode the base64 straight
+       into PNG bytes (avoids lossy page-screenshot resampling).
+    3. Decode the QR payload with ``zxing-cpp`` (a one-time login URL).
+    4. Re-emit the decoded payload as a Unicode half-block QR in the
+       terminal via the ``qrcode`` library (a fresh, perfectly-aligned
+       QR regardless of XHS's PNG size).
+    5. Poll every 2 s — XHS rotates the QR roughly once a minute, so
+       a scannable code is always on screen.
+    6. User scans with the Xiaohongshu mobile app, waits for in-app
        confirmation, then presses Enter here to harvest the cookies
        and write them into ``config.yml::cookies.xhs``.
 
 Requires:
-    pip install playwright opencv-python qrcode pyyaml
+    pip install playwright zxing-cpp qrcode pyyaml
     playwright install chromium
 
 Env overrides:
     XHS_HEADLESS=0   launch a visible browser window (debug)
+    XHS_QR_INVERT=0  swap QR polarity for light-background terminals
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import os
 import sys
 from pathlib import Path
@@ -43,12 +48,11 @@ except ImportError:
     sys.exit(1)
 
 try:
-    import cv2
-    import numpy as np
+    import zxingcpp
 except ImportError:
     print(
-        "ERROR: opencv-python not installed. Install with:\n"
-        "    pip install opencv-python",
+        "ERROR: zxing-cpp not installed. Install with:\n"
+        "    pip install zxing-cpp",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -59,6 +63,16 @@ except ImportError:
     print(
         "ERROR: qrcode not installed. Install with:\n"
         "    pip install qrcode",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+try:
+    from PIL import Image
+except ImportError:
+    print(
+        "ERROR: Pillow not installed. Install with:\n"
+        "    pip install Pillow",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -78,32 +92,48 @@ def _has_required(cookies: list[dict]) -> bool:
     return REQUIRED_FIELDS.issubset({c["name"] for c in cookies})
 
 
-async def _screenshot_decode_qr(page) -> str | None:
-    """Full-page screenshot, decode largest visible QR code."""
+async def _grab_qr_data_url(page) -> str | None:
+    """Return the base64 data URL of the login QR image, or None."""
     try:
-        png = await page.screenshot(full_page=False)
+        src = await page.evaluate(
+            "() => { const el = document.querySelector('img.qrcode-img'); "
+            "return el ? el.src : null; }"
+        )
     except Exception:
         return None
-    arr = np.frombuffer(png, np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if img is None:
+    if isinstance(src, str) and src.startswith("data:image"):
+        return src
+    return None
+
+
+def _decode_qr(data_url: str) -> str | None:
+    """Decode the QR payload from a PNG data URL."""
+    prefix_end = data_url.find(",")
+    if prefix_end == -1:
         return None
-    detector = cv2.QRCodeDetector()
     try:
-        data, _bbox, _ = detector.detectAndDecode(img)
+        png_bytes = base64.b64decode(data_url[prefix_end + 1:])
     except Exception:
         return None
-    return data or None
+    try:
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    except Exception:
+        return None
+    results = zxingcpp.read_barcodes(img)
+    if not results:
+        return None
+    return results[0].text or None
 
 
-def _render_qr(data: str) -> None:
+def _render_qr(payload: str) -> None:
+    """Re-emit *payload* as a scannable QR in the terminal."""
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
         box_size=1,
         border=2,
     )
-    qr.add_data(data)
+    qr.add_data(payload)
     qr.make(fit=True)
     # Default invert=True for dark terminals (filled Unicode blocks
     # represent light QR modules, empty bg represents dark modules —
@@ -116,21 +146,6 @@ def _render_qr(data: str) -> None:
 async def _wait_for_enter() -> None:
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, input)
-
-
-async def _try_click_login(page) -> None:
-    """Best-effort click on whatever login affordance XHS is showing."""
-    for selector in [
-        'text=登录',
-        'button:has-text("登录")',
-        'a:has-text("登录")',
-        '.login-btn',
-    ]:
-        try:
-            await page.locator(selector).first.click(timeout=3000)
-            return
-        except Exception:
-            continue
 
 
 async def _harvest(config_path: Path) -> None:
@@ -159,32 +174,33 @@ async def _harvest(config_path: Path) -> None:
             wait_until="domcontentloaded",
             timeout=30000,
         )
-        await _try_click_login(page)
 
         stop_event = asyncio.Event()
-        last_qr_data: str | None = None
+        last_payload: str | None = None
         header_shown = False
         first_qr_deadline = (
             asyncio.get_event_loop().time() + INITIAL_QR_TIMEOUT_SEC
         )
 
         async def qr_loop() -> None:
-            nonlocal last_qr_data, header_shown
+            nonlocal last_payload, header_shown
             while not stop_event.is_set():
-                qr_data = await _screenshot_decode_qr(page)
-                if qr_data and qr_data != last_qr_data:
-                    if not header_shown:
-                        print()
-                        print("=" * 64)
-                        print("请用小红书 App → 右上角 ➕ → 扫一扫 扫描下方二维码")
-                        print("扫码并在 App 中确认登录后，回到这里按【回车】抓取 cookie")
-                        print("（二维码过期会自动刷新，按 Ctrl+C 可退出）")
-                        print("=" * 64)
-                        header_shown = True
-                    else:
-                        print("\n二维码已刷新：")
-                    _render_qr(qr_data)
-                    last_qr_data = qr_data
+                data_url = await _grab_qr_data_url(page)
+                if data_url is not None:
+                    payload = _decode_qr(data_url)
+                    if payload and payload != last_payload:
+                        if not header_shown:
+                            print()
+                            print("=" * 64)
+                            print("请用小红书 App → 右上角 ➕ → 扫一扫 扫描下方二维码")
+                            print("扫码并在 App 中确认登录后，回到这里按【回车】抓取 cookie")
+                            print("（二维码过期会自动刷新，按 Ctrl+C 可退出）")
+                            print("=" * 64)
+                            header_shown = True
+                        else:
+                            print("\n二维码已刷新：")
+                        _render_qr(payload)
+                        last_payload = payload
                 try:
                     await asyncio.wait_for(
                         stop_event.wait(), timeout=POLL_INTERVAL_SEC,
@@ -199,7 +215,7 @@ async def _harvest(config_path: Path) -> None:
         async def initial_guard() -> None:
             """Abort if the first QR never appears within the timeout."""
             while not stop_event.is_set():
-                if last_qr_data is not None:
+                if last_payload is not None:
                     return
                 if asyncio.get_event_loop().time() >= first_qr_deadline:
                     print(
@@ -221,8 +237,7 @@ async def _harvest(config_path: Path) -> None:
         await context.close()
         await browser.close()
 
-    if last_qr_data is None:
-        # Guard fired; error already printed.
+    if last_payload is None:
         sys.exit(3)
 
     if not _has_required(cookies):

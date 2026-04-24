@@ -8,8 +8,9 @@ aiohttp>=3.8.0           # 异步 HTTP
 
 # XHS cookie extractor (optional)
 playwright>=1.40          # 浏览器自动化，用于扫码登录
-opencv-python>=4.8.0      # 从页面截图中解码二维码
+zxing-cpp>=2.2            # 解码 XHS 登录二维码（比 cv2 更稳）
 qrcode>=7.4               # 在终端重绘二维码
+pillow>=10.0              # 读取 PNG 图像
 
 # Logging
 python-json-logger==2.0.7 # JSON 格式日志
