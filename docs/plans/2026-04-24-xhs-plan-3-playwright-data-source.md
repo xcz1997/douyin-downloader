@@ -284,7 +284,9 @@ the upcoming note_to_media_item TDD."
 
 **Context for the subagent:**
 
-XHS has two major note types — `"normal"` (image list or image gallery) and `"video"`. The `/feed` response nests the note under `data.items[0].note_card` (or camelCase `noteCard`; parser tries both). A `/user_posted` response has `data.notes` as a list with a leaner shape (note IDs + covers only, no full media URLs). For Plan 3 the parser operates on the rich `note_card` shape; the list shape is hydrated per-note in `fetch_list` (Task 6).
+XHS has two major note types — `"normal"` (image list or image gallery) and `"video"`. As of 2026-04-24 single-note payloads are **SSR-only**: `/api/sns/web/v1/feed` no longer fires from the PC web client. Note data lives at `window.__INITIAL_STATE__.note.noteDetailMap[<note_id>]` and each entry is `{comments, currentTime, note, widgets}`; `entry["note"]` is the rich object the parser consumes.
+
+The `/api/sns/web/v1/user_posted` list endpoint still fires (on scroll). Its `data.notes` list has a leaner shape than the SSR note — **and uses snake_case** (`note_id`, `xsec_token`) where the SSR shape uses **camelCase** (`noteId`, `xsecToken`). Task 6 hydrates list stubs by re-navigating to each note's `/explore/<id>` URL and re-reading SSR state.
 
 **Ground-truth schema (from upstream XHS-Downloader at `/tmp/XHS-Downloader/source/application/{video,image,explore}.py`; verified against live API up to 2026-04-24):**
 
@@ -344,18 +346,18 @@ def _load(name: str) -> dict:
         return json.load(f)
 
 
-def _extract_note_card(feed: dict) -> dict:
-    """Unwrap the /feed response to the note_card dict.
+def _extract_note(fixture_body: dict) -> dict:
+    """Pull the rich note dict from a single-note SSR fixture.
 
-    Tries both snake_case (``note_card``) and camelCase (``noteCard``)
-    so the test survives either naming in the SSR envelope.
+    Fixtures are captured from ``window.__INITIAL_STATE__.note.noteDetailMap[<id>]``
+    which has exactly four keys: ``comments``, ``currentTime``,
+    ``note``, ``widgets``. The ``note`` value is what the parser consumes.
     """
-    data = feed.get("data", feed)
-    items = data.get("items") or []
-    assert items, "fixture has no items — re-capture with a live note"
-    first = items[0]
-    note = first.get("note_card") or first.get("noteCard")
-    assert note, "items[0] has neither note_card nor noteCard"
+    note = fixture_body.get("note")
+    assert note, (
+        "fixture has no 'note' key — re-capture with the SSR "
+        "extractor (window.__INITIAL_STATE__.note.noteDetailMap)."
+    )
     return note
 
 
@@ -363,7 +365,7 @@ def _extract_note_card(feed: dict) -> dict:
 
 
 def test_image_note_basic_fields():
-    note = _extract_note_card(_load("note_image.json"))
+    note = _extract_note(_load("note_image.json"))
     item = note_to_media_item(note)
     assert isinstance(item, MediaItem)
     assert item.platform == "xhs"
@@ -375,7 +377,7 @@ def test_image_note_basic_fields():
 
 
 def test_image_note_has_image_assets():
-    note = _extract_note_card(_load("note_image.json"))
+    note = _extract_note(_load("note_image.json"))
     item = note_to_media_item(note)
     images = [a for a in item.assets if a.kind == "image"]
     assert len(images) >= 1
@@ -387,7 +389,7 @@ def test_image_note_has_image_assets():
 
 
 def test_video_note_has_video_asset():
-    note = _extract_note_card(_load("note_video.json"))
+    note = _extract_note(_load("note_video.json"))
     item = note_to_media_item(note)
     videos = [a for a in item.assets if a.kind == "video_main"]
     assert len(videos) == 1
@@ -396,7 +398,7 @@ def test_video_note_has_video_asset():
 
 
 def test_video_note_has_cover_asset():
-    note = _extract_note_card(_load("note_video.json"))
+    note = _extract_note(_load("note_video.json"))
     item = note_to_media_item(note)
     covers = [a for a in item.assets if a.kind == "cover"]
     assert len(covers) == 1
@@ -405,7 +407,7 @@ def test_video_note_has_cover_asset():
 
 def test_video_note_no_image_assets():
     """Video notes must not leak image assets (kind discipline)."""
-    note = _extract_note_card(_load("note_video.json"))
+    note = _extract_note(_load("note_video.json"))
     item = note_to_media_item(note)
     assert not any(a.kind == "image" for a in item.assets)
 
@@ -843,34 +845,38 @@ def _live_to_asset(img: dict) -> MediaAsset | None:
 
 
 def _cover_to_asset(note: dict) -> MediaAsset | None:
-    """Pick a cover URL for a video note.
+    """Pick the cover URL for a video note.
 
-    Priority:
-      1. ``note.cover.urlDefault`` (explicit cover field)
-      2. ``note.imageList[0].urlDefault`` (XHS uses imageList[0] as
-         the video poster when no explicit cover is set)
+    In the SSR state shape there is no separate ``note.cover`` field;
+    video posters live at ``imageList[0]``. We regenerate the token-
+    based CDN URL the same way ``_image_to_asset`` does for the
+    unwatermarked original. Returns None for notes with no imageList
+    (unusual — video notes always carry at least one cover image).
     """
-    cover = note.get("cover") or {}
-    primary = cover.get("urlDefault") or cover.get("url")
-    fallbacks: list[str] = []
-    for u in cover.get("urlList") or []:
-        if u and u != primary:
-            fallbacks.append(u)
-
-    if not primary:
-        images = note.get("imageList") or []
-        if images:
-            first = images[0]
-            primary = first.get("urlDefault") or first.get("url")
-
-    if not primary:
+    images = note.get("imageList") or []
+    if not images:
+        return None
+    first = images[0]
+    raw = first.get("urlDefault") or first.get("url")
+    if not raw:
         return None
 
-    primary_clean = primary.split("!")[0]
+    token = _extract_image_token(raw)
+    primary = (
+        f"https://sns-img-bd.xhscdn.com/{token}"
+        if token else raw.split("!")[0]
+    )
+
+    fallbacks: list[str] = []
+    for key in ("url", "urlPre"):
+        u = first.get(key)
+        if u:
+            cleaned = u.split("!")[0]
+            if cleaned != primary and cleaned not in fallbacks:
+                fallbacks.append(cleaned)
+
     return MediaAsset(
-        url=primary_clean, kind="cover", ext="jpg",
-        fallback_urls=[f.split("!")[0] for f in fallbacks
-                       if f.split("!")[0] != primary_clean],
+        url=primary, kind="cover", ext="jpg", fallback_urls=fallbacks,
     )
 ```
 
@@ -1195,8 +1201,37 @@ class XHSPlatformClient:
     responsible for ``session.start()`` and ``session.close()``.
     """
 
-    _FEED_ENDPOINT = "/api/sns/web/v1/feed"
     _USER_POSTED_ENDPOINT = "/api/sns/web/v1/user_posted"
+
+    # JavaScript evaluated inside the page context to extract a single
+    # note from the SSR state. Returns the plain ``note`` dict (shedding
+    # the {comments, currentTime, note, widgets} wrapper) OR null if
+    # the noteId key is missing from noteDetailMap.
+    #
+    # Vue 3 reactive proxies introduce cyclic back-refs (``dep``,
+    # ``effect``) that break a direct ``return entry.note`` via
+    # page.evaluate (error: "object reference chain is too long"). A
+    # cycle-safe JSON round-trip sheds the proxy and returns a plain
+    # object that Playwright can serialize back.
+    _NOTE_EXTRACT_JS = """
+        (noteId) => {
+            const map = window.__INITIAL_STATE__
+                && window.__INITIAL_STATE__.note
+                && window.__INITIAL_STATE__.note.noteDetailMap;
+            if (!map) return null;
+            const entry = map[noteId];
+            if (!entry || !entry.note) return null;
+            const seen = new WeakSet();
+            const safe = JSON.stringify(entry.note, (k, v) => {
+                if (typeof v === 'object' && v !== null) {
+                    if (seen.has(v)) return undefined;
+                    seen.add(v);
+                }
+                return v;
+            });
+            return JSON.parse(safe);
+        }
+    """
 
     def __init__(self, session) -> None:
         self._session = session
@@ -1205,39 +1240,33 @@ class XHSPlatformClient:
         return await _resolve_xhslink(url)
 
     async def fetch_single(self, ref: ContentRef, span) -> MediaItem:
-        """Fetch one note via explore URL, intercepting /feed."""
+        """Fetch one note by reading SSR state after navigating.
+
+        XHS's PC web no longer fires /api/sns/web/v1/feed on note detail
+        pages (verified 2026-04-24) — the note payload lives entirely
+        in ``window.__INITIAL_STATE__.note.noteDetailMap[<note_id>].note``.
+        We navigate, let hydration settle, then evaluate JS to extract.
+        """
         import asyncio
 
+        self._require_session()
         target = self._build_explore_url(ref)
+        note_id = ref.resource_id
+
         async with self._session.page() as pg:
-            loop = asyncio.get_event_loop()
-            fut: asyncio.Future[dict] = loop.create_future()
-
-            def _on_response(resp):
-                if fut.done():
-                    return
-                if self._FEED_ENDPOINT not in resp.url:
-                    return
-
-                async def _consume():
-                    try:
-                        body = await resp.json()
-                    except Exception:
-                        return
-                    if not fut.done():
-                        fut.set_result(body)
-
-                asyncio.create_task(_consume())
-
-            pg.on("response", _on_response)
             await pg.goto(target, wait_until="domcontentloaded")
-            body = await asyncio.wait_for(fut, timeout=20.0)
+            # Small settle delay for SSR hydration; usually instant.
+            await asyncio.sleep(0.5)
+            note = await pg.evaluate(self._NOTE_EXTRACT_JS, note_id)
 
-        note = self._extract_note_card(body)
         if note is None:
             raise RuntimeError(
-                f"XHS /feed returned no note_card for {ref.resource_id} "
-                f"(response code={body.get('code')}, msg={body.get('msg')})"
+                f"XHS SSR state missing for note {note_id}: "
+                f"window.__INITIAL_STATE__.note.noteDetailMap[{note_id}] "
+                f"is empty. Possible causes: (a) note deleted, "
+                f"(b) cookie risk-controlled (check for captcha), "
+                f"(c) XHS changed the state key layout — inspect "
+                f"window.__INITIAL_STATE__ in devtools to confirm."
             )
         return note_to_media_item(note)
 
@@ -1256,20 +1285,6 @@ class XHSPlatformClient:
         if src:
             params.append(f"xsec_source={src}")
         return f"{base}?{'&'.join(params)}" if params else base
-
-    @staticmethod
-    def _extract_note_card(feed_body: dict) -> dict | None:
-        """Unwrap /feed to the note_card dict.
-
-        Tries both ``note_card`` and ``noteCard`` — XHS has been
-        observed using either wrapper name depending on SSR path.
-        """
-        data = feed_body.get("data") or {}
-        items = data.get("items") or []
-        if not items:
-            return None
-        first = items[0]
-        return first.get("note_card") or first.get("noteCard")
 ```
 
 Also extend `XHSPlatform.match_url` to preserve `xsec_token` / `xsec_source` from the URL query into `ContentRef.extra` for `explore` and `user` matches. Locate the existing `_EXPLORE_RE.search(url)` block in `XHSPlatform.match_url` and replace it with:
