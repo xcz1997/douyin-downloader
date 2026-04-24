@@ -53,6 +53,8 @@
 
 - [ ] **Step 1: Create the capture script**
 
+The script first captures the `/user_posted` response for 秃头金金's profile (the fixed test target), then picks one image-type note and one video-type note from that response (looking up `type` field on each entry) to capture their `/feed` responses. This avoids hard-coding note IDs that may have been deleted.
+
 Create `tools/xhs_capture_fixtures.py` with this exact content:
 
 ```python
@@ -61,12 +63,15 @@ Create `tools/xhs_capture_fixtures.py` with this exact content:
 Usage:
     python tools/xhs_capture_fixtures.py
 
-Reads the XHS cookie from config.yml, launches headless chromium with
-it, visits a known image note, a known video note, and a known user
-profile, records the FIRST /feed and /user_posted JSON responses for
-each, and writes them to tests/fixtures/xhs/.
+Reads the XHS cookie from config.yml, launches headless chromium
+with it, and:
+    1. Visits 秃头金金 profile → captures user_posted_page1.json
+    2. Picks one image (type=normal) + one video (type=video) note
+       from that response
+    3. Visits each one's /explore URL → captures note_image.json
+       and note_video.json respectively
 
-These fixtures become regression tests for note_to_media_item.
+These fixtures drive regression tests for note_to_media_item.
 """
 from __future__ import annotations
 
@@ -81,20 +86,15 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "config.yml"
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "xhs"
 
-# Stable, public targets. If any 404s over time, swap for a fresh one.
-IMAGE_NOTE_URL = (
-    "https://www.xiaohongshu.com/explore/"
-    "65f8a1b2000000001d02c9f6"
-)
-VIDEO_NOTE_URL = (
-    "https://www.xiaohongshu.com/explore/"
-    "65f70120000000001e01fe84"
-)
+# Fixed test target (秃头金金 — public profile, referenced across the
+# whole project). Both IDs and xsec_token are stable until the user's
+# content gating changes.
+USER_ID = "55c726695894464ef542aea0"
+USER_XSEC_TOKEN = "YBbTU9A0gqz095TGQUh16x7JntBoAaPXp-zQk8hjrx768="
+USER_XSEC_SOURCE = "app_share"
 USER_PROFILE_URL = (
-    "https://www.xiaohongshu.com/user/profile/"
-    "55c726695894464ef542aea0"
-    "?xsec_token=YBbTU9A0gqz095TGQUh16x7JntBoAaPXp-zQk8hjrx768="
-    "&xsec_source=app_share"
+    f"https://www.xiaohongshu.com/user/profile/{USER_ID}"
+    f"?xsec_token={USER_XSEC_TOKEN}&xsec_source={USER_XSEC_SOURCE}"
 )
 
 
@@ -128,11 +128,13 @@ def _cookie_header_to_playwright(raw: str) -> list[dict]:
 
 
 async def _capture_one(context, goto_url: str, endpoint_substr: str,
-                      out_path: Path) -> None:
+                       out_path: Path, timeout: float = 30.0) -> dict:
+    """Goto `goto_url`, record the first response whose URL contains
+    `endpoint_substr`, write the JSON to `out_path`, return the dict."""
     page = await context.new_page()
     fut: asyncio.Future[dict] = asyncio.get_event_loop().create_future()
 
-    async def _on_response(resp):
+    async def _consume(resp):
         if fut.done():
             return
         if endpoint_substr not in resp.url:
@@ -141,22 +143,61 @@ async def _capture_one(context, goto_url: str, endpoint_substr: str,
             body = await resp.json()
         except Exception:
             return
-        fut.set_result(body)
+        if not fut.done():
+            fut.set_result(body)
 
-    page.on("response", lambda r: asyncio.create_task(_on_response(r)))
-    await page.goto(goto_url, wait_until="domcontentloaded")
+    page.on("response", lambda r: asyncio.create_task(_consume(r)))
     try:
-        body = await asyncio.wait_for(fut, timeout=30.0)
-    except asyncio.TimeoutError:
-        raise SystemExit(
-            f"timeout waiting for {endpoint_substr} at {goto_url}"
-        )
+        await page.goto(goto_url, wait_until="domcontentloaded")
+        try:
+            body = await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            raise SystemExit(
+                f"timeout waiting for {endpoint_substr} at {goto_url}"
+            )
+    finally:
+        await page.close()
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8",
     )
     print(f"wrote {out_path.relative_to(ROOT)}")
-    await page.close()
+    return body
+
+
+def _pick_note(user_posted: dict, target_type: str) -> tuple[str, str]:
+    """Return (noteId, xsecToken) for the first note of target_type.
+
+    target_type: 'normal' or 'video'. Raises SystemExit if none found,
+    with diagnostic info about what types WERE present.
+    """
+    data = user_posted.get("data") or {}
+    notes = data.get("notes") or []
+    if not notes:
+        # Surface a meaningful sample of the payload to help debug.
+        raise SystemExit(
+            f"user_posted response has no notes. "
+            f"Top-level keys: {list(user_posted.keys())}. "
+            f"data keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}."
+        )
+    seen_types: list[str] = []
+    for n in notes:
+        t = n.get("type") or "?"
+        if t not in seen_types:
+            seen_types.append(t)
+        if t == target_type:
+            nid = n.get("noteId") or n.get("note_id") or n.get("id")
+            xsec = n.get("xsec_token") or n.get("xsecToken") or ""
+            if nid:
+                return str(nid), str(xsec)
+    raise SystemExit(
+        f"no note of type={target_type!r} in user_posted. "
+        f"Types present: {seen_types}. "
+        f"If only one type exists for this user, swap USER_ID in "
+        f"this script for a user whose profile has both image and "
+        f"video notes."
+    )
 
 
 async def main() -> None:
@@ -168,17 +209,40 @@ async def main() -> None:
         try:
             context = await browser.new_context()
             await context.add_cookies(pw_cookies)
+
+            user_posted = await _capture_one(
+                context, USER_PROFILE_URL, "/user_posted",
+                FIXTURE_DIR / "user_posted_page1.json",
+            )
+
+            # Check the response actually succeeded — empty notes
+            # often means risk-control rejection.
+            code = user_posted.get("code")
+            if code not in (0, None):
+                raise SystemExit(
+                    f"user_posted returned code={code} "
+                    f"msg={user_posted.get('msg')!r}. "
+                    f"Cookie likely rejected — re-run xhs_cookie_extractor.py."
+                )
+
+            img_id, img_xsec = _pick_note(user_posted, "normal")
+            vid_id, vid_xsec = _pick_note(user_posted, "video")
+            print(f"picked image note: {img_id}")
+            print(f"picked video note: {vid_id}")
+
             await _capture_one(
-                context, IMAGE_NOTE_URL, "/feed",
+                context,
+                f"https://www.xiaohongshu.com/explore/{img_id}"
+                f"?xsec_token={img_xsec}&xsec_source=pc_user",
+                "/feed",
                 FIXTURE_DIR / "note_image.json",
             )
             await _capture_one(
-                context, VIDEO_NOTE_URL, "/feed",
+                context,
+                f"https://www.xiaohongshu.com/explore/{vid_id}"
+                f"?xsec_token={vid_xsec}&xsec_source=pc_user",
+                "/feed",
                 FIXTURE_DIR / "note_video.json",
-            )
-            await _capture_one(
-                context, USER_PROFILE_URL, "/user_posted",
-                FIXTURE_DIR / "user_posted_page1.json",
             )
         finally:
             await browser.close()
@@ -1307,8 +1371,34 @@ def _load_cookie() -> str:
     return raw
 
 
+def _read_fixture_note_id(fixture_name: str) -> tuple[str, str]:
+    """Pull (noteId, xsecToken) from a captured /feed fixture.
+
+    Keeps the integration tests in sync with Task 1's capture; no
+    hard-coded IDs to go stale.
+    """
+    import json
+    from pathlib import Path
+    fix_path = (
+        Path(__file__).parent / "fixtures" / "xhs" / fixture_name
+    )
+    if not fix_path.exists():
+        pytest.skip(f"fixture {fixture_name} missing — run Task 1 first")
+    body = json.loads(fix_path.read_text(encoding="utf-8"))
+    data = body.get("data") or {}
+    items = data.get("items") or []
+    assert items, f"{fixture_name} has no items"
+    card = items[0].get("note_card") or items[0].get("noteCard") or {}
+    nid = card.get("noteId") or card.get("id")
+    # xsec_token lives on the enclosing item wrapper, not note_card.
+    xsec = items[0].get("xsec_token") or items[0].get("xsecToken") or ""
+    assert nid, f"{fixture_name} items[0] has no noteId"
+    return str(nid), str(xsec)
+
+
 @pytest.mark.asyncio
 async def test_fetch_single_image_note():
+    note_id, xsec = _read_fixture_note_id("note_image.json")
     session = XHSBrowserSession(_load_cookie())
     await session.start()
     try:
@@ -1316,8 +1406,10 @@ async def test_fetch_single_image_note():
         ref = ContentRef(
             platform="xhs",
             content_type="single",
-            resource_id="65f8a1b2000000001d02c9f6",
+            resource_id=note_id,
             resolved_url="",
+            extra={"xsec_token": xsec, "xsec_source": "pc_user"}
+            if xsec else {},
         )
         item = await client.fetch_single(ref, span=None)
         assert isinstance(item, MediaItem)
@@ -1327,8 +1419,6 @@ async def test_fetch_single_image_note():
     finally:
         await session.close()
 ```
-
-If the image-note ID above 404s by the time this runs, the subagent should swap for the ID used in the fixture capture (Task 1) — keep it in one place.
 
 - [ ] **Step 3: Run platform tests + ensure unit tests still pass**
 
