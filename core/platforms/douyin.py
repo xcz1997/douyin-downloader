@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 
-from core.platform import ContentRef
+from core.platform import ContentRef, MediaAsset, MediaItem
 
 
 _SHORT_URL_RE = re.compile(r"^https?://v\.douyin\.com/\w+")
@@ -81,9 +81,6 @@ class DouyinPlatform:
         return None
 
 
-from core.platform import MediaAsset, MediaItem
-
-
 def aweme_to_media_item(aweme: dict) -> MediaItem:
     """Convert a Douyin aweme dict into the standardized MediaItem form.
 
@@ -137,7 +134,7 @@ def _video_to_asset(video: dict) -> MediaAsset | None:
         )
         for br in sorted_br:
             for u in br.get("play_addr", {}).get("url_list", []):
-                u = u.replace("playwm", "play")
+                u = u.replace("playwm", "play").replace("720p", "1080p")
                 if primary is None:
                     primary = u
                 elif u not in fallbacks:
@@ -148,7 +145,7 @@ def _video_to_asset(video: dict) -> MediaAsset | None:
         if not addr:
             continue
         for u in addr.get("url_list", []):
-            u = u.replace("playwm", "play")
+            u = u.replace("playwm", "play").replace("720p", "1080p")
             if primary is None:
                 primary = u
             elif u not in fallbacks:

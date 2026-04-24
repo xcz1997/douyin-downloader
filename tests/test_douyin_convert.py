@@ -113,3 +113,19 @@ def test_raw_preserved():
     }
     item = aweme_to_media_item(aweme)
     assert item.raw == aweme
+
+
+def test_video_720p_upgraded_to_1080p():
+    """The legacy 720p→1080p URL rewrite must survive the refactor."""
+    aweme = {
+        "aweme_id": "1", "desc": "", "create_time": 0,
+        "author": {"nickname": "x"},
+        "video": {
+            "play_addr": {
+                "url_list": ["https://v/720p/clip.mp4"],
+            },
+        },
+    }
+    item = aweme_to_media_item(aweme)
+    video_asset = next(a for a in item.assets if a.kind == "video_main")
+    assert video_asset.url == "https://v/1080p/clip.mp4"
