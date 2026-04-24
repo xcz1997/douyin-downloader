@@ -95,3 +95,40 @@ class ListPage:
     items: list[MediaItem]
     next_cursor: str | int | None
     has_more: bool
+
+
+# ---------------------------------------------------------------------------
+# Protocols
+# ---------------------------------------------------------------------------
+
+
+class Platform(Protocol):
+    """URL-matching and content-type classification for a single source.
+
+    Implementations register with ``PlatformRegistry`` and are queried for
+    every input URL. The first match wins.
+    """
+
+    name: str
+
+    def match_url(self, url: str) -> ContentRef | None:
+        """Return a ContentRef for URLs this platform handles, else None."""
+        ...
+
+
+class PlatformClient(Protocol):
+    """Asynchronous content fetcher for a platform."""
+
+    async def resolve_short_url(self, url: str) -> str:
+        """Resolve a short URL to its canonical form (returns input if N/A)."""
+        ...
+
+    async def fetch_single(self, ref: "ContentRef", span) -> "MediaItem":
+        """Fetch a single post (video/image note) and return a MediaItem."""
+        ...
+
+    async def fetch_list(
+        self, ref: "ContentRef", cursor: str | int | None, span,
+    ) -> "ListPage":
+        """Fetch one page of a paginated list (user posts, collection, ...)."""
+        ...
