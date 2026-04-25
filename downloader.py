@@ -74,6 +74,7 @@ async def cmd_download(config: AppConfig, args: argparse.Namespace):
     from core.platform import PlatformRegistry
     from core.platforms.douyin import DouyinPlatform, DouyinPlatformClient
     from core.platforms.xhs import XHSPlatform, XHSPlatformClient
+    from core.platforms.xhs_browser import XHSBrowserSession
 
     session_id = uuid.uuid4().hex[:8]
     log_dir = Path("logs")
@@ -110,7 +111,22 @@ async def cmd_download(config: AppConfig, args: argparse.Namespace):
 
     registry = PlatformRegistry()
     registry.register(DouyinPlatform(), DouyinPlatformClient(api))
-    registry.register(XHSPlatform(), XHSPlatformClient())
+
+    xhs_session: XHSBrowserSession | None = None
+    try:
+        xhs_state = await cookie_mgr.ensure_valid_cookie(platform="xhs")
+        xhs_session = XHSBrowserSession(xhs_state.value)
+        await xhs_session.start()
+        registry.register(XHSPlatform(), XHSPlatformClient(xhs_session))
+    except Exception as exc:
+        log.warn(
+            "XHS Cookie 获取失败（若本次只下载抖音可忽略）",
+            error=str(exc),
+        )
+        # Register with None so the platform still resolves URL matching;
+        # actual XHS calls will raise SkippableError pointing at the
+        # missing-cookie cause, which pipeline catches per-task.
+        registry.register(XHSPlatform(), XHSPlatformClient(None))
 
     pipeline = DownloadPipeline(
         config=config, registry=registry, engine=engine,
@@ -138,6 +154,8 @@ async def cmd_download(config: AppConfig, args: argparse.Namespace):
         dashboard.stop()
         await api.close()
         await engine.close()
+        if xhs_session is not None:
+            await xhs_session.close()
         tracer.close()
         dual_logger.close()
 
