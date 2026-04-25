@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from core.errors import SkippableError
 from core.platform import ContentRef, ListPage, MediaAsset, MediaItem
 
 
@@ -48,6 +49,7 @@ class XHSPlatform:
                 content_type="single",
                 resource_id=m.group(1),
                 resolved_url=url,
+                extra=self._extract_xsec(url),
             )
 
         m = _DISCOVERY_RE.search(url)
@@ -57,6 +59,7 @@ class XHSPlatform:
                 content_type="single",
                 resource_id=m.group(1),
                 resolved_url=url,
+                extra=self._extract_xsec(url),
             )
 
         m = _USER_RE.search(url)
@@ -66,6 +69,7 @@ class XHSPlatform:
                 content_type="user",
                 resource_id=m.group(1),
                 resolved_url=url,
+                extra=self._extract_xsec(url),
             )
 
         m = _BOARD_RE.search(url)
@@ -75,6 +79,7 @@ class XHSPlatform:
                 content_type="collection",
                 resource_id=m.group(1),
                 resolved_url=url,
+                extra=self._extract_xsec(url),
             )
 
         if _SEARCH_RE.search(url):
@@ -102,6 +107,20 @@ class XHSPlatform:
             )
 
         return None
+
+    @staticmethod
+    def _extract_xsec(url: str) -> dict:
+        """Pull xsec_token / xsec_source out of a URL's query string."""
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        out: dict = {}
+        tok = params.get("xsec_token")
+        src = params.get("xsec_source")
+        if tok:
+            out["xsec_token"] = tok[0]
+        if src:
+            out["xsec_source"] = src[0]
+        return out
 
 
 def note_to_media_item(note: dict) -> MediaItem:
@@ -384,26 +403,113 @@ def _cover_to_asset(note: dict) -> MediaAsset | None:
 
 
 class XHSPlatformClient:
-    """Stage A placeholder. Real implementation lands in Plan 3.
+    """PlatformClient for XHS using a shared Playwright session.
 
-    Exists so DownloadPipeline can detect "XHS URL matched but downloader
-    not yet wired" and report a clear error instead of silently skipping.
+    XHS PC web SSRs single-note payloads into window.__INITIAL_STATE__
+    (no /api/sns/web/v1/feed on note pages anymore). fetch_single
+    navigates and reads SSR state via page.evaluate.
+
+    Args:
+        session: Started ``XHSBrowserSession`` (cookies injected) or
+            ``None`` if no XHS cookie configured. ``None`` is permitted
+            so the platform can still register; calls then raise a
+            clear RuntimeError naming the missing-cookie cause.
+
+    The client does NOT own the session lifecycle; ``downloader.py``
+    is responsible for ``session.start()`` and ``session.close()``.
     """
 
+    _USER_POSTED_ENDPOINT = "/api/sns/web/v1/user_posted"
+
+    # JavaScript evaluated inside the page context to extract a single
+    # note from SSR state. Returns the plain ``note`` dict (shedding
+    # the {comments, currentTime, note, widgets} wrapper) OR null if
+    # the noteId key is missing from noteDetailMap.
+    #
+    # Vue 3 reactive proxies create cyclic back-refs (``dep``,
+    # ``effect``) that break a direct ``return entry.note`` via
+    # page.evaluate ("object reference chain is too long"). The
+    # cycle-safe JSON round-trip sheds the proxy and returns a plain
+    # object that Playwright can serialize back across CDP.
+    _NOTE_EXTRACT_JS = """
+        (noteId) => {
+            const map = window.__INITIAL_STATE__
+                && window.__INITIAL_STATE__.note
+                && window.__INITIAL_STATE__.note.noteDetailMap;
+            if (!map) return null;
+            const entry = map[noteId];
+            if (!entry || !entry.note) return null;
+            const seen = new WeakSet();
+            const safe = JSON.stringify(entry.note, (k, v) => {
+                if (typeof v === 'object' && v !== null) {
+                    if (seen.has(v)) return undefined;
+                    seen.add(v);
+                }
+                return v;
+            });
+            return JSON.parse(safe);
+        }
+    """
+
+    def __init__(self, session) -> None:
+        self._session = session
+
+    def _require_session(self) -> None:
+        if self._session is None:
+            raise SkippableError(
+                "XHS downloader not available: no XHS cookie configured "
+                "(run `python xhs_cookie_extractor.py`)"
+            )
+
     async def resolve_short_url(self, url: str) -> str:
+        return await _resolve_xhslink(url)
+
+    async def fetch_single(self, ref: ContentRef, span) -> MediaItem:
+        """Fetch one note by reading SSR state after navigating.
+
+        XHS's PC web no longer fires /api/sns/web/v1/feed on note
+        detail pages (verified 2026-04-24); the note payload lives at
+        ``window.__INITIAL_STATE__.note.noteDetailMap[<id>].note``.
+        """
+        import asyncio
+
+        self._require_session()
+        del span  # SSR read has no inner API call to attribute
+        target = self._build_explore_url(ref)
+        note_id = ref.resource_id
+
+        async with self._session.page() as pg:
+            await pg.goto(target, wait_until="domcontentloaded")
+            note = None
+            for _ in range(15):
+                note = await pg.evaluate(self._NOTE_EXTRACT_JS, note_id)
+                if note is not None:
+                    break
+                await asyncio.sleep(0.2)
+
+        if note is None:
+            raise RuntimeError(
+                f"XHS SSR state missing for note {note_id}: "
+                f"window.__INITIAL_STATE__.note.noteDetailMap[{note_id}] "
+                f"is empty. Possible causes: (a) note deleted, "
+                f"(b) cookie risk-controlled (check for captcha), "
+                f"(c) XHS changed the state key layout — inspect "
+                f"window.__INITIAL_STATE__ in devtools to confirm."
+            )
+        return note_to_media_item(note)
+
+    async def fetch_list(self, ref: ContentRef, cursor, span) -> ListPage:
         raise NotImplementedError(
-            "XHS short URL resolution not yet implemented "
-            "(pending Plan 3 Stage B)"
+            "XHS fetch_list not yet implemented — see Plan 3 Task 6"
         )
 
-    async def fetch_single(self, ref, span):
-        raise NotImplementedError(
-            "XHS single-note fetch not yet implemented "
-            "(pending Plan 3 Stage B)"
-        )
-
-    async def fetch_list(self, ref, cursor, span):
-        raise NotImplementedError(
-            "XHS list fetch not yet implemented "
-            "(pending Plan 3 Stage B)"
-        )
+    def _build_explore_url(self, ref: ContentRef) -> str:
+        base = f"https://www.xiaohongshu.com/explore/{ref.resource_id}"
+        params: list[str] = []
+        tok = ref.extra.get("xsec_token") if ref.extra else None
+        src = ref.extra.get("xsec_source") if ref.extra else None
+        if tok:
+            params.append(f"xsec_token={tok}")
+        if src:
+            params.append(f"xsec_source={src}")
+        return f"{base}?{'&'.join(params)}" if params else base

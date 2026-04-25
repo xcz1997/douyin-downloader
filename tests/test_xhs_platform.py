@@ -102,3 +102,24 @@ def test_no_match_douyin():
 def test_no_match_random():
     p = XHSPlatform()
     assert p.match_url("https://example.com/foo") is None
+
+
+def test_explore_url_preserves_xsec():
+    p = XHSPlatform()
+    ref = p.match_url(
+        "https://www.xiaohongshu.com/explore/abc123"
+        "?xsec_token=TOKEN&xsec_source=app_share"
+    )
+    assert ref is not None
+    assert ref.extra.get("xsec_token") == "TOKEN"
+    assert ref.extra.get("xsec_source") == "app_share"
+
+
+def test_user_url_preserves_xsec():
+    p = XHSPlatform()
+    ref = p.match_url(
+        "https://www.xiaohongshu.com/user/profile/5abc123456789def0abcdef1"
+        "?xsec_token=TOK"
+    )
+    assert ref is not None
+    assert ref.extra.get("xsec_token") == "TOK"
