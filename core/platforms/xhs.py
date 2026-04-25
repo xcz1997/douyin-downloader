@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from urllib.parse import parse_qs, urlparse
 
+import httpx
+
 from core.platform import ContentRef, ListPage, MediaAsset, MediaItem
 
 
@@ -303,6 +305,33 @@ def _extract_image_token(url: str) -> str | None:
     tail = "/".join(parts[5:])
     token = tail.split("!")[0]
     return token or None
+
+
+async def _resolve_xhslink(url: str) -> str:
+    """Follow one redirect on an xhslink.com short URL.
+
+    Returns the Location header for 3xx responses, else the original URL.
+    Mobile UA is used because xhslink serves different Location values
+    to desktop vs mobile and we want the mobile form (richer xsec_token).
+    """
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
+        ),
+    }
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=False, timeout=10.0,
+        ) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code in (301, 302, 303, 307, 308):
+                loc = resp.headers.get("Location")
+                if loc:
+                    return loc
+    except Exception:
+        pass
+    return url
 
 
 def _live_to_asset(img: dict) -> MediaAsset | None:
