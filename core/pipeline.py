@@ -51,10 +51,26 @@ class DownloadPipeline:
     async def run(self) -> None:
         session_span = self._tracer.start_trace("session", url="batch")
 
+        needed_platforms = self._infer_needed_platforms()
+
         with self._tracer.context_span(session_span, "cookie_check") as cs:
-            cookie_state = await self._cookie_mgr.ensure_valid_cookie()
-            cs.attributes["source"] = cookie_state.source
-            self._dashboard.set_cookie_state(cookie_state)
+            primary_state = None
+            for plat in needed_platforms:
+                try:
+                    state = await self._cookie_mgr.ensure_valid_cookie(
+                        platform=plat,
+                    )
+                except Exception as exc:
+                    self._log.warn(
+                        f"平台 {plat} Cookie 获取失败",
+                        error=str(exc),
+                    )
+                    continue
+                if primary_state is None:
+                    primary_state = state
+            cs.attributes["platforms"] = ",".join(needed_platforms)
+            if primary_state is not None:
+                self._dashboard.set_cookie_state(primary_state)
 
         tasks = await self._prepare_tasks(session_span)
         self._log.info(f"共 {len(tasks)} 个任务")
@@ -65,6 +81,23 @@ class DownloadPipeline:
             self._dashboard.refresh()
 
         self._tracer.end_span(session_span)
+
+    def _infer_needed_platforms(self) -> list[str]:
+        """Return platform names whose cookies this batch needs.
+
+        Inspects ``config.links`` and uses the registry to match each
+        URL. An unresolvable URL doesn't add a platform — if it turns
+        out unhandled later, ``_prepare_tasks`` logs and skips.
+        """
+        seen: list[str] = []
+        for url in self._config.links:
+            match = self._registry.match(url)
+            if match is None:
+                continue
+            name = match[0].name
+            if name not in seen:
+                seen.append(name)
+        return seen
 
     async def _prepare_tasks(
         self, parent_span: TraceSpan,
