@@ -56,8 +56,19 @@ class DownloadEngine:
 
     async def _ensure_session(self) -> None:
         if self._session is None or self._session.closed:
+            # Browser UA + Referer required: XHS image CDNs (sns-img-bd,
+            # sns-webpic-qc) return 403 to aiohttp's default UA. Douyin
+            # CDNs accept this UA without issue.
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=60),
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/122.0.0.0 Safari/537.36"
+                    ),
+                    "Referer": "https://www.xiaohongshu.com/",
+                },
             )
 
     def _build_save_dir(self, item: MediaItem) -> Path:
