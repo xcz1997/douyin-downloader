@@ -75,3 +75,32 @@ async def test_fetch_single_image_note():
         assert any(a.kind == "image" for a in item.assets)
     finally:
         await session.close()
+
+
+@pytest.mark.asyncio
+async def test_fetch_list_user_profile():
+    """秃头金金 has 30+ public notes; we expect >=5 (conservative)."""
+    session = XHSBrowserSession(_load_cookie())
+    await session.start()
+    try:
+        client = XHSPlatformClient(session)
+        ref = ContentRef(
+            platform="xhs",
+            content_type="user",
+            resource_id="55c726695894464ef542aea0",
+            resolved_url="",
+            extra={
+                "xsec_token":
+                    "YBbTU9A0gqz095TGQUh16x7JntBoAaPXp-zQk8hjrx768=",
+                "xsec_source": "app_share",
+            },
+        )
+        page = await client.fetch_list(ref, cursor=None, span=None)
+        assert page.has_more is False
+        assert len(page.items) >= 5
+        for item in page.items[:3]:
+            assert isinstance(item, MediaItem)
+            assert item.platform == "xhs"
+            assert len(item.assets) >= 1
+    finally:
+        await session.close()

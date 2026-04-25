@@ -499,12 +499,145 @@ class XHSPlatformClient:
         return note_to_media_item(note)
 
     async def fetch_list(self, ref: ContentRef, cursor, span) -> ListPage:
-        raise NotImplementedError(
-            "XHS fetch_list not yet implemented — see Plan 3 Task 6"
-        )
+        """Fetch all notes for a user profile and hydrate each via SSR.
+
+        XHS's /user_posted responses are triggered by scroll on the SPA;
+        we auto-scroll to bottom, collecting every response, then make
+        a second pass calling fetch_single for each note to get media
+        URLs (single-note SSR state is the only path to full URLs).
+
+        The ``cursor`` parameter is ignored: we always return the full
+        list in one call with ``has_more=False``. Pipeline's cursor
+        loop naturally exits after one iteration.
+        """
+        del cursor  # XHS pagination is scroll-driven, not cursor-driven.
+
+        if ref.content_type != "user":
+            raise ValueError(
+                f"XHS fetch_list currently supports content_type='user', "
+                f"got {ref.content_type!r}"
+            )
+
+        listings = await self._collect_user_listings(ref)
+
+        items: list[MediaItem] = []
+        for note_stub in listings:
+            # /user_posted uses snake_case while SSR uses camelCase —
+            # accept both so this code survives a future API alignment.
+            note_id = (
+                note_stub.get("noteId")
+                or note_stub.get("note_id")
+                or note_stub.get("id")
+            )
+            if not note_id:
+                continue
+            xsec = (
+                note_stub.get("xsec_token")
+                or note_stub.get("xsecToken")
+                or ""
+            )
+            sub_ref = ContentRef(
+                platform="xhs",
+                content_type="single",
+                resource_id=str(note_id),
+                resolved_url="",
+                extra={"xsec_token": xsec, "xsec_source": "pc_user"},
+            )
+            try:
+                items.append(await self.fetch_single(sub_ref, span))
+            except Exception as exc:
+                # Skip notes that fail (deleted, private, #324-style
+                # schema drift on a single item, etc.) — don't let one
+                # bad note kill the whole batch. The error is recorded
+                # in the per-task tracer span if available.
+                if span is not None:
+                    try:
+                        span.attributes[f"skip_{note_id}"] = str(exc)[:200]
+                    except Exception:
+                        pass
+                continue
+
+        return ListPage(items=items, next_cursor=None, has_more=False)
+
+    async def _collect_user_listings(self, ref: ContentRef) -> list[dict]:
+        """Scroll the profile page collecting /user_posted note stubs.
+
+        Stops when the API signals ``has_more=False`` OR three
+        consecutive scrolls produce no new note IDs OR the safety
+        cap (40 scrolls ≈ 1200 notes) is hit.
+        """
+        import asyncio
+
+        self._require_session()
+        target = self._build_profile_url(ref)
+        collected: dict[str, dict] = {}  # note_id -> stub
+        done = asyncio.Event()
+        max_quiet = 3
+        max_total_scrolls = 40
+
+        async with self._session.page() as pg:
+            def _on_response(resp):
+                if self._USER_POSTED_ENDPOINT not in resp.url:
+                    return
+
+                async def _consume():
+                    try:
+                        body = await resp.json()
+                    except Exception:
+                        return
+                    data = body.get("data") or {}
+                    notes = data.get("notes") or []
+                    for n in notes:
+                        nid = (
+                            n.get("noteId")
+                            or n.get("note_id")
+                            or n.get("id")
+                        )
+                        if nid:
+                            collected[str(nid)] = n
+                    has_more = data.get("has_more")
+                    if has_more is None:
+                        has_more = data.get("hasMore")
+                    if has_more is False:
+                        done.set()
+
+                asyncio.create_task(_consume())
+
+            pg.on("response", _on_response)
+            await pg.goto(target, wait_until="domcontentloaded")
+            await asyncio.sleep(1.5)  # initial SSR settle
+
+            quiet_scrolls = 0
+            for _ in range(max_total_scrolls):
+                if done.is_set():
+                    break
+                before = len(collected)
+                await pg.evaluate(
+                    "window.scrollTo(0, document.body.scrollHeight)"
+                )
+                await asyncio.sleep(1.2)
+                if len(collected) == before:
+                    quiet_scrolls += 1
+                    if quiet_scrolls >= max_quiet:
+                        break
+                else:
+                    quiet_scrolls = 0
+
+        return list(collected.values())
 
     def _build_explore_url(self, ref: ContentRef) -> str:
         base = f"https://www.xiaohongshu.com/explore/{ref.resource_id}"
+        params: list[str] = []
+        tok = ref.extra.get("xsec_token") if ref.extra else None
+        src = ref.extra.get("xsec_source") if ref.extra else None
+        if tok:
+            params.append(f"xsec_token={tok}")
+        if src:
+            params.append(f"xsec_source={src}")
+        return f"{base}?{'&'.join(params)}" if params else base
+
+    def _build_profile_url(self, ref: ContentRef) -> str:
+        base = f"https://www.xiaohongshu.com/user/profile/{ref.resource_id}"
         params: list[str] = []
         tok = ref.extra.get("xsec_token") if ref.extra else None
         src = ref.extra.get("xsec_source") if ref.extra else None
