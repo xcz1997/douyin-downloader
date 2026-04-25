@@ -7,6 +7,7 @@ run; torn down in downloader.py's cleanup phase.
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 
@@ -40,7 +41,15 @@ class XHSBrowserSession:
             await session.close()
     """
 
-    def __init__(self, cookie_header: str, *, headless: bool = True) -> None:
+    def __init__(
+        self, cookie_header: str, *, headless: bool | None = None,
+    ) -> None:
+        # Default to headed: headless chromium exposes navigator.webdriver,
+        # HeadlessChrome in UA, and a few other tells that XHS uses for bot
+        # detection. Locally we have a display, so go headed by default.
+        # CI/server (no display) sets XHS_HEADLESS=1 to opt back in.
+        if headless is None:
+            headless = os.environ.get("XHS_HEADLESS", "0") == "1"
         self._cookie_header = cookie_header
         self._headless = headless
         self._pw = None

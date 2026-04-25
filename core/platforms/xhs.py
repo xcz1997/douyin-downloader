@@ -451,8 +451,15 @@ class XHSPlatformClient:
         }
     """
 
-    def __init__(self, session) -> None:
+    def __init__(
+        self, session, *,
+        hydrate_delay_range: tuple[float, float] = (0.5, 1.0),
+    ) -> None:
         self._session = session
+        # Random sleep between consecutive fetch_single hydrates in
+        # fetch_list, to mimic human browsing cadence and reduce XHS
+        # bot-detection signals. Tests pass (0, 0) to skip the delay.
+        self._hydrate_delay_range = hydrate_delay_range
 
     def _require_session(self) -> None:
         if self._session is None:
@@ -566,8 +573,20 @@ class XHSPlatformClient:
                     except Exception:
                         pass
                 continue
+            # Pace consecutive hydrates so we don't burst-navigate the
+            # explore page. Skipped on failure (no real navigation
+            # happened in fetch_single beyond the first redirect).
+            await self._sleep_between_hydrates()
 
         return ListPage(items=items, next_cursor=None, has_more=False)
+
+    async def _sleep_between_hydrates(self) -> None:
+        import asyncio
+        import random
+        lo, hi = self._hydrate_delay_range
+        if hi <= 0:
+            return
+        await asyncio.sleep(random.uniform(lo, hi))
 
     async def _collect_user_listings(self, ref: ContentRef) -> list[dict]:
         """Scroll the profile page collecting /user_posted note stubs.

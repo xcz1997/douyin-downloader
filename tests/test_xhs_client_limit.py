@@ -31,7 +31,7 @@ def _stub_item(note_id: str) -> MediaItem:
 @pytest.mark.asyncio
 async def test_fetch_list_honors_limit():
     """`limit=3` against 10-note listing should call fetch_single 3 times."""
-    client = XHSPlatformClient(session=object())  # session presence only
+    client = XHSPlatformClient(session=object(), hydrate_delay_range=(0, 0))  # session presence only
     client._collect_user_listings = AsyncMock(return_value=_stub_listings(10))
 
     async def _fake_single(ref, span):
@@ -53,7 +53,7 @@ async def test_fetch_list_honors_limit():
 @pytest.mark.asyncio
 async def test_fetch_list_no_limit_hydrates_all():
     """`limit=0` (default) hydrates the entire listing."""
-    client = XHSPlatformClient(session=object())
+    client = XHSPlatformClient(session=object(), hydrate_delay_range=(0, 0))
     client._collect_user_listings = AsyncMock(return_value=_stub_listings(7))
 
     async def _fake_single(ref, span):
@@ -72,10 +72,47 @@ async def test_fetch_list_no_limit_hydrates_all():
 
 
 @pytest.mark.asyncio
+async def test_hydrate_delay_invoked_between_successes():
+    """Default hydrate delay range > 0 means asyncio.sleep is called once
+    per successful hydrate (not on failure)."""
+    import asyncio
+    client = XHSPlatformClient(
+        session=object(), hydrate_delay_range=(0.01, 0.01),
+    )
+    client._collect_user_listings = AsyncMock(return_value=_stub_listings(3))
+
+    async def _fake_single(ref, span):
+        return _stub_item(ref.resource_id)
+
+    client.fetch_single = AsyncMock(side_effect=_fake_single)
+
+    sleeps: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def _capture_sleep(seconds):
+        sleeps.append(seconds)
+        await real_sleep(0)
+
+    import unittest.mock as _m
+    ref = ContentRef(
+        platform="xhs", content_type="user", resource_id="u",
+        resolved_url="", extra={"xsec_token": "TT"},
+    )
+    with _m.patch("asyncio.sleep", _capture_sleep):
+        page = await client.fetch_list(ref, cursor=None, span=None)
+
+    assert len(page.items) == 3
+    # One sleep per success. A failure path would skip the sleep, but all
+    # 3 hydrates succeeded here.
+    assert len(sleeps) == 3
+    assert all(0.005 <= s <= 0.015 for s in sleeps)
+
+
+@pytest.mark.asyncio
 async def test_fetch_list_limit_skips_failed_notes_until_count_reached():
     """When some hydrate calls fail (deleted/private), keep going until
     `limit` successful items collected — failures don't count."""
-    client = XHSPlatformClient(session=object())
+    client = XHSPlatformClient(session=object(), hydrate_delay_range=(0, 0))
     client._collect_user_listings = AsyncMock(return_value=_stub_listings(10))
 
     # First 2 succeed, next 2 fail, next 1 succeeds → reach limit=3.
