@@ -258,10 +258,20 @@ class DownloadPipeline:
         }
         label = label_map.get(ref.content_type, "列表")
 
+        # Compute limit up front so we can hand it to fetch_list as a
+        # soft hint and short-circuit our own paging loop. The old code
+        # only honored a per-type cap for user posts (key "post"); we
+        # generalize so other content types can opt in via
+        # config.number[<content_type>].
+        limit_key = "post" if ref.content_type == "user" else ref.content_type
+        limit = self._config.number.get(limit_key, 0)
+
         self._dashboard.set_status(f"正在获取{label}…")
         with self._tracer.context_span(root, f"fetch_all_{ref.content_type}") as fs:
             while True:
-                page: ListPage = await client.fetch_list(ref, cursor, fs)
+                page: ListPage = await client.fetch_list(
+                    ref, cursor, fs, limit=limit,
+                )
                 self._dashboard.record_api_call(True)
                 if not page.items:
                     break
@@ -273,18 +283,12 @@ class DownloadPipeline:
                 self._dashboard.refresh()
                 if not page.has_more:
                     break
+                if limit > 0 and len(all_items) >= limit:
+                    break
                 cursor = page.next_cursor
         self._dashboard.clear_status()
 
         total = len(all_items)
-        # Behavioral note: the old pipeline only honored a per-type limit
-        # for user posts (keyed as "post" in config.number). This
-        # generalization lets mix/music/collection/search/topic also
-        # respect a config.number[<content_type>] cap if the user sets
-        # one. Missing keys default to 0 which means "no limit",
-        # preserving old behavior for configs that only set `post`.
-        limit_key = "post" if ref.content_type == "user" else ref.content_type
-        limit = self._config.number.get(limit_key, 0)
         effective_total = min(total, limit) if limit > 0 else total
 
         with self._tracer.context_span(
@@ -307,8 +311,15 @@ class DownloadPipeline:
                     )
                 self._dashboard.clear_current_item()
                 self._dashboard.add_bytes(result.bytes_downloaded)
-                if result.success:
+                # limit counter: count notes that produced at least one real
+                # media file. result.success goes False on any partial-asset
+                # failure (e.g. cover 403 while video succeeded), which would
+                # falsely starve the counter and disable `number.post` —
+                # media_files_written excludes the always-written _data.json
+                # so it reflects "did we actually fetch content for this note".
+                if result.media_files_written > 0:
                     downloaded += 1
+                if result.success:
                     self._dashboard.log_item_done(
                         desc or f"作品 {i+1}", True,
                         f"{result.files_written} 文件, {result.elapsed:.1f}s",

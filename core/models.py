@@ -72,3 +72,7 @@ class DownloadResult:
     elapsed: float
     error: str | None = None
     bytes_downloaded: int = 0
+    # Excludes _data.json — counts only real media (images/videos/cover/music)
+    # actually written. Pipeline uses this for limit accounting so a note that
+    # produced only a sidecar json doesn't count toward `number.post`.
+    media_files_written: int = 0

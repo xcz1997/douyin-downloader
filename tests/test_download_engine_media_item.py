@@ -51,6 +51,7 @@ async def test_download_media_video(tmp_engine):
     assert isinstance(result, DownloadResult)
     assert result.success is True
     assert result.files_written == 4  # video + music + cover + data.json
+    assert result.media_files_written == 3  # excludes _data.json
 
     # Directory layout: save_path/douyin/alice/<ts>_hello world/
     subdirs = list(root.iterdir())
@@ -100,6 +101,7 @@ async def test_image_item_live_photo(tmp_engine):
     assert result.success is True
     # 3 assets + 1 json
     assert result.files_written == 4
+    assert result.media_files_written == 3
 
     # Filenames reflect suggested_filename
     calls = [c.args for c in engine.download_file.await_args_list]
@@ -125,6 +127,46 @@ async def test_flags_skip_music_cover(tmp_path):
     result = await engine.download_media(_make_item(), span)
     # Only video, no music / no cover / no json
     assert result.files_written == 1
+    assert result.media_files_written == 1
+
+
+@pytest.mark.asyncio
+async def test_partial_asset_failure_keeps_media_count(tmp_path):
+    """When some assets fail (cover 403), success goes False but
+    media_files_written reflects what actually landed. The pipeline limit
+    counter relies on this — see test_pipeline_limit.py."""
+    tracer = MagicMock(); tracer.add_event = MagicMock()
+    logger = MagicMock()
+    engine = DownloadEngine(
+        save_path=tmp_path, tracer=tracer, logger=logger, concurrency=2,
+    )
+
+    # First call (video) succeeds, second (music) fails, third (cover) fails.
+    engine.download_file = AsyncMock(side_effect=[
+        (True, 1024), (False, 0), (False, 0),
+    ])
+    span = MagicMock()
+    result = await engine.download_media(_make_item(), span)
+    assert result.success is False  # any failure flips success
+    assert result.media_files_written == 1  # only video succeeded
+    assert result.files_written == 2  # video + json
+
+
+@pytest.mark.asyncio
+async def test_all_assets_fail_zero_media(tmp_path):
+    """When every asset fails, media_files_written is 0 even though
+    _data.json still gets written."""
+    tracer = MagicMock(); tracer.add_event = MagicMock()
+    logger = MagicMock()
+    engine = DownloadEngine(
+        save_path=tmp_path, tracer=tracer, logger=logger, concurrency=2,
+    )
+    engine.download_file = AsyncMock(return_value=(False, 0))
+    span = MagicMock()
+    result = await engine.download_media(_make_item(), span)
+    assert result.success is False
+    assert result.media_files_written == 0
+    assert result.files_written == 1  # only _data.json
 
 
 @pytest.mark.asyncio

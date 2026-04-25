@@ -234,8 +234,12 @@ class DouyinPlatformClient:
         return aweme_to_media_item(aweme)
 
     async def fetch_list(
-        self, ref: ContentRef, cursor, span,
+        self, ref: ContentRef, cursor, span, *, limit: int = 0,
     ) -> ListPage:
+        # Douyin's APIs paginate cheaply (one HTTP call per page, no
+        # per-item enrichment), so we ignore `limit` here and let the
+        # pipeline truncate after merging pages.
+        del limit
         if ref.content_type == "user":
             mode = ref.extra.get("mode", "post")
             if mode == "like":

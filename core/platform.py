@@ -135,8 +135,18 @@ class PlatformClient(Protocol):
 
     async def fetch_list(
         self, ref: "ContentRef", cursor: str | int | None, span,
+        *, limit: int = 0,
     ) -> "ListPage":
-        """Fetch one page of a paginated list (user posts, collection, ...)."""
+        """Fetch one page of a paginated list (user posts, collection, ...).
+
+        ``limit`` is a soft hint: if > 0, the implementation MAY early-stop
+        once it has accumulated at least ``limit`` items. Implementations
+        that fetch one cheap page at a time (e.g. Douyin's cursor-paginated
+        APIs) can ignore it — the pipeline will truncate. Implementations
+        that do expensive per-item enrichment before returning (e.g. XHS,
+        which hydrates every note via a separate browser navigation) MUST
+        honor the hint to avoid wasting work.
+        """
         ...
 
 

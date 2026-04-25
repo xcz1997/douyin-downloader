@@ -498,7 +498,9 @@ class XHSPlatformClient:
             )
         return note_to_media_item(note)
 
-    async def fetch_list(self, ref: ContentRef, cursor, span) -> ListPage:
+    async def fetch_list(
+        self, ref: ContentRef, cursor, span, *, limit: int = 0,
+    ) -> ListPage:
         """Fetch all notes for a user profile and hydrate each via SSR.
 
         XHS's /user_posted responses are triggered by scroll on the SPA;
@@ -509,6 +511,12 @@ class XHSPlatformClient:
         The ``cursor`` parameter is ignored: we always return the full
         list in one call with ``has_more=False``. Pipeline's cursor
         loop naturally exits after one iteration.
+
+        ``limit`` (when > 0) caps how many notes we hydrate. Hydration is
+        expensive — one chromium navigation per note (~1.3s) — so honoring
+        the hint takes a smoke-test from ~9 minutes (405 notes) to ~30s
+        (3 notes). Without it, pipeline-level limit only saves the
+        download phase, not the hydrate phase.
         """
         del cursor  # XHS pagination is scroll-driven, not cursor-driven.
 
@@ -522,6 +530,8 @@ class XHSPlatformClient:
 
         items: list[MediaItem] = []
         for note_stub in listings:
+            if limit > 0 and len(items) >= limit:
+                break
             # /user_posted uses snake_case while SSR uses camelCase —
             # accept both so this code survives a future API alignment.
             note_id = (

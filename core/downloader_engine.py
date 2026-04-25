@@ -125,7 +125,7 @@ class DownloadEngine:
         t0 = time.time()
         save_dir = self._build_save_dir(item)
         folder_name = save_dir.name
-        files_written = 0
+        media_files_written = 0
         total_bytes = 0
         success = True
 
@@ -139,13 +139,14 @@ class DownloadEngine:
                 on_progress=on_progress,
             )
             if ok:
-                files_written += 1
+                media_files_written += 1
                 total_bytes += nbytes
             else:
                 success = False
             if asset.kind == "image":
                 await asyncio.sleep(0.3)
 
+        files_written = media_files_written
         if self._download_json:
             json_path = save_dir / f"{folder_name}_data.json"
             with open(json_path, "w", encoding="utf-8") as f:
@@ -157,6 +158,7 @@ class DownloadEngine:
             task=task, success=success,
             files_written=files_written, elapsed=time.time() - t0,
             bytes_downloaded=total_bytes,
+            media_files_written=media_files_written,
         )
 
     async def download_file(

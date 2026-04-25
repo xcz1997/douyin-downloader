@@ -69,6 +69,13 @@ def test_download_result():
     result = DownloadResult(task=task, success=True, files_written=3, elapsed=1.5)
     assert result.success is True
     assert result.error is None
+    assert result.media_files_written == 0  # default
+
+    result2 = DownloadResult(
+        task=task, success=True, files_written=3, elapsed=1.5,
+        media_files_written=2,
+    )
+    assert result2.media_files_written == 2
 
 
 def test_cookie_state_defaults_to_douyin():

@@ -30,7 +30,7 @@ class FakeClient:
             create_time=0.0, assets=[], raw={},
         )
 
-    async def fetch_list(self, ref, cursor, span):
+    async def fetch_list(self, ref, cursor, span, *, limit: int = 0):
         return ListPage(items=[], next_cursor=None, has_more=False)
 
 

@@ -46,7 +46,7 @@ async def test_pipeline_skips_douyin_cookie_for_xhs_only_batch():
         async def fetch_single(self, ref, span):
             raise AssertionError("unreached")
 
-        async def fetch_list(self, ref, c, span):
+        async def fetch_list(self, ref, c, span, **kw):
             raise AssertionError("unreached")
 
     registry.register(XHSPlatform(), _Dummy())
@@ -104,7 +104,7 @@ async def test_pipeline_uses_douyin_cookie_for_douyin_only_batch():
         async def fetch_single(self, ref, span):
             raise AssertionError("unreached")
 
-        async def fetch_list(self, ref, c, span):
+        async def fetch_list(self, ref, c, span, **kw):
             raise AssertionError("unreached")
 
     registry.register(DouyinPlatform(), _Dummy())

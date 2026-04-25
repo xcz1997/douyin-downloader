@@ -31,7 +31,7 @@ class XhsFake:
 class ClientFake:
     async def resolve_short_url(self, url): return url
     async def fetch_single(self, ref, span): return None
-    async def fetch_list(self, ref, cursor, span): return None
+    async def fetch_list(self, ref, cursor, span, **kw): return None
 
 
 def test_registry_match_first_platform():
