@@ -28,6 +28,18 @@ def _stub_item(note_id: str) -> MediaItem:
     )
 
 
+def test_default_delay_ranges_are_conservative():
+    """Defaults must keep us under the XHS per-IP rate-limit window.
+    The 14:14-2026-04-25 smoke peaked at ~200-400 req/min and got
+    throttled — anything tighter than (5, 10) on either knob risks
+    re-triggering."""
+    client = XHSPlatformClient(session=object())
+    assert client._hydrate_delay_range[0] >= 5.0
+    assert client._hydrate_delay_range[1] >= 10.0
+    assert client._scroll_delay_range[0] >= 5.0
+    assert client._scroll_delay_range[1] >= 10.0
+
+
 @pytest.mark.asyncio
 async def test_fetch_list_honors_limit():
     """`limit=3` against 10-note listing should call fetch_single 3 times."""

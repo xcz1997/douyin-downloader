@@ -453,13 +453,19 @@ class XHSPlatformClient:
 
     def __init__(
         self, session, *,
-        hydrate_delay_range: tuple[float, float] = (0.5, 1.0),
+        hydrate_delay_range: tuple[float, float] = (5.0, 10.0),
+        scroll_delay_range: tuple[float, float] = (5.0, 10.0),
     ) -> None:
         self._session = session
-        # Random sleep between consecutive fetch_single hydrates in
-        # fetch_list, to mimic human browsing cadence and reduce XHS
-        # bot-detection signals. Tests pass (0, 0) to skip the delay.
+        # Random sleeps that pace anything triggering an XHS request.
+        # XHS rate-limits per-account/IP on a window-quota basis; the
+        # 14:14 smoke (405 hydrates in 9 min ≈ peak 200-400 req/min)
+        # blew through it and got us throttled for the rest of the
+        # day. 5-10s between each request-triggering action lands us
+        # at ~6-12 ops/min, well under any plausible quota. Tests
+        # pass (0, 0) to skip the delay.
         self._hydrate_delay_range = hydrate_delay_range
+        self._scroll_delay_range = scroll_delay_range
 
     def _require_session(self) -> None:
         if self._session is None:
@@ -581,9 +587,16 @@ class XHSPlatformClient:
         return ListPage(items=items, next_cursor=None, has_more=False)
 
     async def _sleep_between_hydrates(self) -> None:
+        await self._random_sleep(self._hydrate_delay_range)
+
+    async def _scroll_delay(self) -> None:
+        await self._random_sleep(self._scroll_delay_range)
+
+    @staticmethod
+    async def _random_sleep(rng: tuple[float, float]) -> None:
         import asyncio
         import random
-        lo, hi = self._hydrate_delay_range
+        lo, hi = rng
         if hi <= 0:
             return
         await asyncio.sleep(random.uniform(lo, hi))
@@ -634,7 +647,7 @@ class XHSPlatformClient:
 
             pg.on("response", _on_response)
             await pg.goto(target, wait_until="domcontentloaded")
-            await asyncio.sleep(1.5)  # initial SSR settle
+            await self._scroll_delay()  # initial SSR settle, paced
 
             quiet_scrolls = 0
             for _ in range(max_total_scrolls):
@@ -644,7 +657,7 @@ class XHSPlatformClient:
                 await pg.evaluate(
                     "window.scrollTo(0, document.body.scrollHeight)"
                 )
-                await asyncio.sleep(1.2)
+                await self._scroll_delay()
                 if len(collected) == before:
                     quiet_scrolls += 1
                     if quiet_scrolls >= max_quiet:
