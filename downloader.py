@@ -112,21 +112,32 @@ async def cmd_download(config: AppConfig, args: argparse.Namespace):
     registry = PlatformRegistry()
     registry.register(DouyinPlatform(), DouyinPlatformClient(api))
 
+    xhs_platform = XHSPlatform()
+    has_xhs_link = any(
+        xhs_platform.match_url(url) is not None for url in config.links
+    )
+
     xhs_session: XHSBrowserSession | None = None
-    try:
-        xhs_state = await cookie_mgr.ensure_valid_cookie(platform="xhs")
-        xhs_session = XHSBrowserSession(xhs_state.value)
-        await xhs_session.start()
-        registry.register(XHSPlatform(), XHSPlatformClient(xhs_session))
-    except Exception as exc:
-        log.warn(
-            "XHS Cookie 获取失败（若本次只下载抖音可忽略）",
-            error=str(exc),
-        )
-        # Register with None so the platform still resolves URL matching;
-        # actual XHS calls will raise SkippableError pointing at the
-        # missing-cookie cause, which pipeline catches per-task.
-        registry.register(XHSPlatform(), XHSPlatformClient(None))
+    if not has_xhs_link:
+        # No XHS links in this run — skip the browser launch entirely.
+        # Still register so URL matching resolves; XHS calls would raise
+        # SkippableError, but pipeline never dispatches one here.
+        registry.register(xhs_platform, XHSPlatformClient(None))
+    else:
+        try:
+            xhs_state = await cookie_mgr.ensure_valid_cookie(platform="xhs")
+            xhs_session = XHSBrowserSession(xhs_state.value)
+            await xhs_session.start()
+            registry.register(xhs_platform, XHSPlatformClient(xhs_session))
+        except Exception as exc:
+            log.warn(
+                "XHS Cookie 获取失败（若本次只下载抖音可忽略）",
+                error=str(exc),
+            )
+            # Register with None so the platform still resolves URL matching;
+            # actual XHS calls will raise SkippableError pointing at the
+            # missing-cookie cause, which pipeline catches per-task.
+            registry.register(xhs_platform, XHSPlatformClient(None))
 
     pipeline = DownloadPipeline(
         config=config, registry=registry, engine=engine,
