@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from core.models import AppConfig, DownloadOptions
+from core.models import AppConfig, DownloadOptions, SubtitleConfig
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +32,12 @@ _DEFAULTS: dict[str, Any] = {
     "retry": 3,
     "database": True,
     "log_level": "INFO",
+    "subtitle": {
+        "enabled": False,
+        "sources": ["track", "ocr", "asr"],
+        "asr": {"model": "0.6b"},
+        "ocr": {"interval": 0.5, "similarity": 0.7},
+    },
 }
 
 
@@ -383,6 +389,16 @@ class ConfigLoader:
             json=bool(dl_block.get("metadata", True)),
         )
 
+        # subtitle sub-block → SubtitleConfig
+        _sub = data.get("subtitle", {}) or {}
+        subtitle = SubtitleConfig(
+            enabled=bool(_sub.get("enabled", False)),
+            sources=list(_sub.get("sources", ["track", "ocr", "asr"])),
+            asr_model=str((_sub.get("asr", {}) or {}).get("model", "0.6b")),
+            ocr_interval=float((_sub.get("ocr", {}) or {}).get("interval", 0.5)),
+            ocr_similarity=float((_sub.get("ocr", {}) or {}).get("similarity", 0.7)),
+        )
+
         return AppConfig(
             links=links,
             save_path=save_path,
@@ -398,4 +414,5 @@ class ConfigLoader:
             increase=data.get("incremental", {"post": False}),
             retry_times=int(data.get("retry", 3)),
             log_level=str(data.get("log_level", "INFO")),
+            subtitle=subtitle,
         )
