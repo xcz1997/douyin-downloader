@@ -274,6 +274,16 @@ class ConfigLoader:
             "retry": 3,
             "database": True,
             "log_level": "INFO",
+            # 字幕提取（默认关闭，改 enabled: true 并按需安装依赖后生效）
+            # sources 可选: track（平台字幕轨，无需额外依赖）、
+            #   ocr（硬字幕识别，需 opencv-python + rapidocr-onnxruntime）、
+            #   asr（语音转写，需 mlx-qwen3-asr，仅 Apple Silicon）
+            "subtitle": {
+                "enabled": False,
+                "sources": ["track", "ocr", "asr"],
+                "asr": {"model": "0.6b"},
+                "ocr": {"interval": 0.5, "similarity": 0.7},
+            },
         }
         with dest.open("w", encoding="utf-8") as fh:
             yaml.dump(default_content, fh, allow_unicode=True, default_flow_style=False, sort_keys=False)

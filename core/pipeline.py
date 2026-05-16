@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import traceback
 from pathlib import Path
 
@@ -33,6 +34,18 @@ def _collect_video_files(roots: list[str]) -> list[Path]:
             for ext in _VIDEO_EXTS:
                 out.extend(p.rglob(f"*{ext}"))
     return out
+
+
+def _load_raw_json(root: str) -> dict | None:
+    p = Path(root)
+    if not p.is_dir():
+        return None
+    for j in sorted(p.glob("*_data.json")):
+        try:
+            return json.loads(j.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+    return None
 
 
 def build_subtitle_runner(config) -> SubtitleRunner | None:
@@ -79,11 +92,14 @@ class DownloadPipeline:
         self._subtitle_runner = build_subtitle_runner(config)
 
     async def _run_subtitles(self, result) -> None:
-        if self._subtitle_runner is None or not result.success:
+        if self._subtitle_runner is None:
             return
-        videos = _collect_video_files(result.task.file_paths)
-        for v in videos:
-            await asyncio.to_thread(self._subtitle_runner.run, v, None)
+        if result.media_files_written <= 0:
+            return
+        for root in result.task.file_paths:
+            raw = _load_raw_json(root)
+            for v in _collect_video_files([root]):
+                await asyncio.to_thread(self._subtitle_runner.run, v, raw)
 
     def _progress_cb(self, done: int, total: int, name: str) -> None:
         self._dashboard.update_bytes_progress(done, total, name)

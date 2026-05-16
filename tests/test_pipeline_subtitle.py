@@ -43,3 +43,20 @@ def test_collect_video_files_finds_mp4(tmp_path):
     (sub / "c.mov").write_bytes(b"x")
     found = sorted(p.name for p in _collect_video_files([str(tmp_path)]))
     assert found == ["a.mp4", "c.mov"]
+
+
+def test_load_raw_json_reads_data_json(tmp_path):
+    from core.pipeline import _load_raw_json
+    import json as _json
+    (tmp_path / "0001_desc_data.json").write_text(
+        _json.dumps({"video": {"caption": "https://x/cap.vtt"}}),
+        encoding="utf-8",
+    )
+    raw = _load_raw_json(str(tmp_path))
+    assert raw == {"video": {"caption": "https://x/cap.vtt"}}
+
+
+def test_load_raw_json_none_when_absent(tmp_path):
+    from core.pipeline import _load_raw_json
+    assert _load_raw_json(str(tmp_path)) is None
+    assert _load_raw_json(str(tmp_path / "nope")) is None
