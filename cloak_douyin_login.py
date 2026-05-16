@@ -25,14 +25,13 @@ KEY_FIELDS = ("sessionid", "sessionid_ss", "msToken", "passport_csrf_token",
 
 
 async def main() -> None:
+    # No user_agent override: CloakBrowser ships a self-consistent
+    # UA / navigator.userAgentData / JA3. Forcing a UA string risks a
+    # version mismatch against its native Chromium and is itself a tell
+    # (over-evasion backfires).
     ctx = await cloakbrowser.launch_context_async(
         headless=False,
         stealth_args=True,
-        user_agent=(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/146.0.0.0 Safari/537.36"
-        ),
         viewport={"width": 1280, "height": 900},
     )
     page = await ctx.new_page()
