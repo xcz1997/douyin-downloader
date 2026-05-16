@@ -136,6 +136,22 @@ python extract_text.py <视频文件或目录> --sources ocr,asr
 
 **已知限制：** 启用后字幕在每个视频下载完成后串行提取（ASR 较慢），会拖慢整体下载速度。默认关闭时无任何性能影响。
 
+### XHS 反检测（CloakBrowser）
+
+XHS 数据抓取走 CloakBrowser（源码级 C++ 反检测，自洽原生指纹）。两种模式：
+
+- **注入模式（默认）**：`xhs.profile_dir` 留空，用 `cookies.xhs` 的 Cookie；有头运行时**每次**都会开窗口让你确认登录态（可现场扫码），按回车继续。设 `XHS_HEADLESS=1` 跑无头则跳过确认（信任注入的 Cookie）。
+- **持久 profile 模式（更强）**：
+
+```yaml
+xhs:
+  profile_dir: /你的/路径/.xhs_profile
+```
+
+先跑一次 `python xhs_login.py` 扫码登录（profile 持久化、获取指纹=使用指纹），之后下载自动复用，无需每次确认、可 headless。
+
+依赖：`pip install cloakbrowser`（缺它 XHS 会明确报错并跳过，不静默降级；抖音不受影响）。
+
 ### 命令行参数
 
 ```bash
