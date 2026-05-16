@@ -106,6 +106,36 @@ database: true
 python downloader.py --config
 ```
 
+### 字幕提取（可选，默认关闭）
+
+下载完成后可自动提取字幕，默认不启用，不影响正常下载。
+
+**config.yml 配置示例：**
+```yaml
+subtitle:
+  enabled: true                # 默认 false，改为 true 才会提取
+  sources: [track, ocr, asr]   # 可只填需要的来源子集
+  asr:
+    model: "0.6b"              # 语音识别模型，可选 0.6b 或 1.7b
+  ocr:
+    interval: 0.5              # 截帧间隔（秒）
+    similarity: 0.7            # 去重相似度阈值
+```
+
+**三种来源：**
+- `track` — 平台自带字幕轨，无额外依赖，优先使用
+- `ocr` — 识别画面硬字幕，需安装：`pip install opencv-python rapidocr-onnxruntime`
+- `asr` — 语音识别转写，需安装：`pip install mlx-qwen3-asr`（仅支持 Apple Silicon）
+
+**输出格式：** 每个视频每种来源各生成一份 `<视频名>.<来源>.json`（Whisper 风格，含时间戳 segments）和一份 `.txt`，与视频保存在同一目录。
+
+**独立运行 CLI：**
+```bash
+python extract_text.py <视频文件或目录> --sources ocr,asr
+```
+
+**已知限制：** 启用后字幕在每个视频下载完成后串行提取（ASR 较慢），会拖慢整体下载速度。默认关闭时无任何性能影响。
+
 ### 命令行参数
 
 ```bash

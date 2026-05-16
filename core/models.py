@@ -10,6 +10,15 @@ class DownloadOptions:
 
 
 @dataclass
+class SubtitleConfig:
+    enabled: bool = False
+    sources: list[str] = field(default_factory=lambda: ["track", "ocr", "asr"])
+    asr_model: str = "0.6b"
+    ocr_interval: float = 0.5
+    ocr_similarity: float = 0.7
+
+
+@dataclass
 class AppConfig:
     links: list[str]
     save_path: Path
@@ -25,6 +34,7 @@ class AppConfig:
     increase: dict
     retry_times: int
     log_level: str
+    subtitle: SubtitleConfig = field(default_factory=SubtitleConfig)
 
 
 @dataclass

@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from core.models import AppConfig, DownloadOptions
+from core.models import AppConfig, DownloadOptions, SubtitleConfig
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +32,12 @@ _DEFAULTS: dict[str, Any] = {
     "retry": 3,
     "database": True,
     "log_level": "INFO",
+    "subtitle": {
+        "enabled": False,
+        "sources": ["track", "ocr", "asr"],
+        "asr": {"model": "0.6b"},
+        "ocr": {"interval": 0.5, "similarity": 0.7},
+    },
 }
 
 
@@ -268,6 +274,16 @@ class ConfigLoader:
             "retry": 3,
             "database": True,
             "log_level": "INFO",
+            # 字幕提取（默认关闭，改 enabled: true 并按需安装依赖后生效）
+            # sources 可选: track（平台字幕轨，无需额外依赖）、
+            #   ocr（硬字幕识别，需 opencv-python + rapidocr-onnxruntime）、
+            #   asr（语音转写，需 mlx-qwen3-asr，仅 Apple Silicon）
+            "subtitle": {
+                "enabled": False,
+                "sources": ["track", "ocr", "asr"],
+                "asr": {"model": "0.6b"},
+                "ocr": {"interval": 0.5, "similarity": 0.7},
+            },
         }
         with dest.open("w", encoding="utf-8") as fh:
             yaml.dump(default_content, fh, allow_unicode=True, default_flow_style=False, sort_keys=False)
@@ -383,6 +399,16 @@ class ConfigLoader:
             json=bool(dl_block.get("metadata", True)),
         )
 
+        # subtitle sub-block → SubtitleConfig
+        _sub = data.get("subtitle", {}) or {}
+        subtitle = SubtitleConfig(
+            enabled=bool(_sub.get("enabled", False)),
+            sources=list(_sub.get("sources", ["track", "ocr", "asr"])),
+            asr_model=str((_sub.get("asr", {}) or {}).get("model", "0.6b")),
+            ocr_interval=float((_sub.get("ocr", {}) or {}).get("interval", 0.5)),
+            ocr_similarity=float((_sub.get("ocr", {}) or {}).get("similarity", 0.7)),
+        )
+
         return AppConfig(
             links=links,
             save_path=save_path,
@@ -398,4 +424,5 @@ class ConfigLoader:
             increase=data.get("incremental", {"post": False}),
             retry_times=int(data.get("retry", 3)),
             log_level=str(data.get("log_level", "INFO")),
+            subtitle=subtitle,
         )

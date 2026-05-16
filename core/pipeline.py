@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import traceback
+from pathlib import Path
 
 from core.dashboard import Dashboard
 from core.downloader_engine import DownloadEngine
@@ -12,7 +15,49 @@ from core.models import AppConfig, DownloadTask, TraceSpan
 from core.platform import (
     ContentRef, ListPage, MediaItem, PlatformRegistry,
 )
+from core.subtitle.asr_source import ASRSource
+from core.subtitle.ocr_source import OCRSource
+from core.subtitle.runner import SubtitleRunner
+from core.subtitle.track_source import TrackSource
 from core.tracer import Tracer
+
+_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".webm"}
+
+
+def _collect_video_files(roots: list[str]) -> list[Path]:
+    out: list[Path] = []
+    for r in roots:
+        p = Path(r)
+        if p.is_file() and p.suffix.lower() in _VIDEO_EXTS:
+            out.append(p)
+        elif p.is_dir():
+            for ext in _VIDEO_EXTS:
+                out.extend(p.rglob(f"*{ext}"))
+    return out
+
+
+def _load_raw_json(root: str) -> dict | None:
+    p = Path(root)
+    if not p.is_dir():
+        return None
+    for j in sorted(p.glob("*_data.json")):
+        try:
+            return json.loads(j.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+    return None
+
+
+def build_subtitle_runner(config) -> SubtitleRunner | None:
+    sub = config.subtitle
+    if not sub.enabled:
+        return None
+    impls = [
+        OCRSource(interval=sub.ocr_interval, similarity=sub.ocr_similarity),
+        TrackSource(),
+        ASRSource(model=sub.asr_model),
+    ]
+    return SubtitleRunner(impls, sources=list(sub.sources))
 
 
 class DownloadPipeline:
@@ -44,6 +89,17 @@ class DownloadPipeline:
         self._tracer = tracer
         self._log = logger
         self._dashboard = dashboard
+        self._subtitle_runner = build_subtitle_runner(config)
+
+    async def _run_subtitles(self, result) -> None:
+        if self._subtitle_runner is None:
+            return
+        if result.media_files_written <= 0:
+            return
+        for root in result.task.file_paths:
+            raw = _load_raw_json(root)
+            for v in _collect_video_files([root]):
+                await asyncio.to_thread(self._subtitle_runner.run, v, raw)
 
     def _progress_cb(self, done: int, total: int, name: str) -> None:
         self._dashboard.update_bytes_progress(done, total, name)
@@ -235,6 +291,7 @@ class DownloadPipeline:
                 item, span, on_progress=self._progress_cb,
             )
         self._dashboard.clear_current_item()
+        await self._run_subtitles(result)
         self._dashboard.add_bytes(result.bytes_downloaded)
         task.stats["downloaded"] = 1 if result.success else 0
         self._dashboard.log_item_done(
@@ -310,6 +367,7 @@ class DownloadPipeline:
                         item, media_span, on_progress=self._progress_cb,
                     )
                 self._dashboard.clear_current_item()
+                await self._run_subtitles(result)
                 self._dashboard.add_bytes(result.bytes_downloaded)
                 # limit counter: count notes that produced at least one real
                 # media file. result.success goes False on any partial-asset
