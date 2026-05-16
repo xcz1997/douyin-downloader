@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import json
+import re
 import time
 
 import aiohttp
@@ -20,6 +21,47 @@ from core.errors import (
 from core.logger import BoundLogger
 from core.models import CookieState, TraceSpan
 from core.tracer import Tracer
+
+# The web aweme/detail API is gated (returns non-JSON even when logged
+# in). The iesdouyin share page still server-renders the full aweme into
+# window._ROUTER_DATA, but only for a mobile UA — a desktop UA gets
+# redirected to the JS SPA which has no embedded data.
+_SHARE_URL = "https://www.iesdouyin.com/share/video/{}/"
+_SHARE_MOBILE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+    "Mobile/15E148 Safari/604.1"
+)
+_ROUTER_DATA_RE = re.compile(
+    r"_ROUTER_DATA\s*=\s*(\{.*?\})\s*</script>", re.S
+)
+
+
+def _extract_ssr_aweme(html: str) -> dict:
+    """Pull the raw aweme dict out of an iesdouyin share page.
+
+    The aweme lives at ``_ROUTER_DATA.loaderData[<*/page>]
+    .videoInfoRes.item_list[0]`` and has the same shape as an
+    ``aweme_list`` item, so callers can feed it through the normal
+    parse path.
+
+    Raises:
+        ContentNotFoundError: No ``_ROUTER_DATA`` or no item in it.
+    """
+    m = _ROUTER_DATA_RE.search(html)
+    if not m:
+        raise ContentNotFoundError("分享页无 _ROUTER_DATA（可能被重定向）")
+    try:
+        router = json.loads(m.group(1))
+    except json.JSONDecodeError as exc:
+        raise ContentNotFoundError(f"_ROUTER_DATA 解析失败: {exc}") from exc
+    for value in (router.get("loaderData") or {}).values():
+        if not isinstance(value, dict):
+            continue
+        items = (value.get("videoInfoRes") or {}).get("item_list") or []
+        if items:
+            return items[0]
+    raise ContentNotFoundError("分享页 _ROUTER_DATA 无 item_list")
 
 
 class RateLimiter:
@@ -211,9 +253,39 @@ class DouyinAPIClient:
             self._result.dataConvert(aweme_type, self._result.awemeDict, detail)
             return copy.deepcopy(self._result.awemeDict)
 
-        return await self._request(
-            parent_span, "api_get_video", url, parse_fn=parse, aweme_id=aweme_id
-        )
+        try:
+            return await self._request(
+                parent_span, "api_get_video", url,
+                parse_fn=parse, aweme_id=aweme_id,
+            )
+        except (NetworkError, ContentNotFoundError):
+            # aweme/detail API gave nothing usable — fall back to the
+            # iesdouyin share-page SSR. It yields a raw aweme dict (same
+            # shape as an aweme_list item), which is what fetch_single ->
+            # aweme_to_media_item expects, so return it directly without
+            # the legacy dataConvert path.
+            return await self._fetch_share_ssr(aweme_id, parent_span)
+
+    async def _fetch_share_ssr(
+        self, aweme_id: str, parent_span: TraceSpan
+    ) -> dict:
+        """Fetch a single aweme from the iesdouyin share SSR page.
+
+        Pure-HTTP fallback (mobile UA, no cookie/X-Bogus needed) for when
+        the gated web aweme/detail API returns non-JSON.
+        """
+        await self._ensure_session()
+        with self._tracer.context_span(
+            parent_span, "share_ssr_fallback", aweme_id=aweme_id
+        ):
+            async with self._session.get(
+                _SHARE_URL.format(aweme_id),
+                headers={"User-Agent": _SHARE_MOBILE_UA},
+            ) as resp:
+                if resp.status != 200:
+                    raise NetworkError(f"分享页 HTTP {resp.status}")
+                html = await resp.text()
+        return _extract_ssr_aweme(html)
 
     async def get_user_posts(
         self, sec_uid: str, cursor: int, parent_span: TraceSpan

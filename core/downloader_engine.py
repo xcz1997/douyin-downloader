@@ -56,9 +56,11 @@ class DownloadEngine:
 
     async def _ensure_session(self) -> None:
         if self._session is None or self._session.closed:
-            # Browser UA + Referer required: XHS image CDNs (sns-img-bd,
-            # sns-webpic-qc) return 403 to aiohttp's default UA. Douyin
-            # CDNs accept this UA without issue.
+            # Browser UA required: XHS image CDNs (sns-img-bd, sns-webpic-qc)
+            # return 403 to aiohttp's default UA. Douyin CDNs accept it too.
+            # Referer is set PER-REQUEST by host (see _referer_for): a global
+            # xiaohongshu Referer was poisoning Douyin video CDN requests,
+            # which enforce referer anti-leech and 403 every fallback URL.
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=60),
                 headers={
@@ -67,9 +69,23 @@ class DownloadEngine:
                         "AppleWebKit/537.36 (KHTML, like Gecko) "
                         "Chrome/122.0.0.0 Safari/537.36"
                     ),
-                    "Referer": "https://www.xiaohongshu.com/",
                 },
             )
+
+    @staticmethod
+    def _referer_for(url: str) -> str | None:
+        """Pick the Referer matching the CDN host's anti-leech policy."""
+        if any(
+            h in url
+            for h in ("xiaohongshu.com", "xhscdn.com", "sns-img", "sns-webpic")
+        ):
+            return "https://www.xiaohongshu.com/"
+        if any(
+            h in url
+            for h in ("douyin", "douyinvod", "snssdk", "amemv", "iesdouyin")
+        ):
+            return "https://www.douyin.com/"
+        return None
 
     def _build_save_dir(self, item: MediaItem) -> Path:
         author = item.author or "unknown"
@@ -176,10 +192,14 @@ class DownloadEngine:
         await self._ensure_session()
         async with self._semaphore:
             all_urls = [url] + (fallback_urls or [])
+            last_status = 0
             for i, u in enumerate(all_urls):
                 try:
                     u = u.replace("playwm", "play")
-                    async with self._session.get(u) as resp:
+                    ref = self._referer_for(u)
+                    headers = {"Referer": ref} if ref else None
+                    async with self._session.get(u, headers=headers) as resp:
+                        last_status = resp.status
                         if resp.status == 200:
                             content_length = int(
                                 resp.headers.get("Content-Length", 0)
@@ -209,7 +229,10 @@ class DownloadEngine:
                     if i < len(all_urls) - 1:
                         continue
 
-        self._log.warn("文件下载失败", file=path.name, urls_tried=len(all_urls))
+        self._log.warn(
+            "文件下载失败", file=path.name,
+            urls_tried=len(all_urls), last_status=last_status,
+        )
         return (False, 0)
 
     async def close(self) -> None:
