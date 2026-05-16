@@ -1,96 +1,59 @@
-# 抖音下载器 v4.0 配置
-
-# 下载链接（支持多个）
 links:
-  - https://v.douyin.com/cGYAzzSDbRQ/ #jin
-  #- https://v.douyin.com/zLTC26Nb00Y/
-  #- https://v.douyin.com/s35wuCFqnkw/
-
-  # 保存目录
+- https://v.douyin.com/QQ7iJNWVbVI
 save_path: ./JIN/
-
-# Cookie（字符串格式）
-cookie: "gd_random=eyJtYXRjaCI6ZmFsc2UsInBlcmNlbnQiOjAuNzgxMjUyNjU3NzM2Mjc0fQ==\
-  .qhM+CmopHeF4abpkyeujjnHwtwfDRQvx6TqbsVbBs3U=;
-  __ac_nonce=0698af35a00fa93d4ace6;
-  __ac_signature=_02B4Z6wo00f01PAQPDgAAIDB3zfD2CJrJjzwIBiAAFWU43;
-  enter_pc_once=1;
-  UIFID_TEMP=f670781d5233033367a4d99498efe9bd14a45e82156a15d1881178acac831acf8d\
-  1ba356cddf6afed911265855037e63aaff47b3758070d13ffc14315ae97388b944a65d460028b\
-  575c2ec2d540df738; x-web-secsdk-uid=4a89e9ca-dadd-4ea6-9279-dcc09d6ec1c7;
-  s_v_web_id=verify_mlgdd6hj_ldVh4bkE_fX6K_4c63_9XFb_qvuAgSj7BTEH;
-  volume_info=%7B%22isMute%22%3Atrue%2C%22isUserMute%22%3Atrue%2C%22volume%22%3\
-  A0.5%7D; =douyin.com; device_web_cpu_core=10; device_web_memory_size=8;
-  architecture=amd64; hevc_supported=true; IsDouyinActive=true;
-  home_can_add_dy_2_desktop=%220%22; dy_swidth=1280; dy_sheight=720;
-  stream_recommend_feed_params=%22%7B%5C%22cookie_enabled%5C%22%3Atrue%2C%5C%22\
-  screen_width%5C%22%3A1280%2C%5C%22screen_height%5C%22%3A720%2C%5C%22browser_o\
-  nline%5C%22%3Atrue%2C%5C%22cpu_core_num%5C%22%3A10%2C%5C%22device_memory%5C%2\
-  2%3A8%2C%5C%22downlink%5C%22%3A1.5%2C%5C%22effective_type%5C%22%3A%5C%224g%5C\
-  %22%2C%5C%22round_trip_time%5C%22%3A100%7D%22;
-  strategyABtestKey=%221770713951.378%22;
-  fpk1=U2FsdGVkX19oovAOuAo/ajguE1oEmiTHDhPpVrqqelXtm0BW8wm2gu3zjwnR5nUMToVN43ll\
-  0S3iRhktPcuanA==; fpk2=9c1ce27f08b16479d2e17743062b28ed;
-  stream_player_status_params=%22%7B%5C%22is_auto_play%5C%22%3A0%2C%5C%22is_ful\
-  l_screen%5C%22%3A0%2C%5C%22is_full_webscreen%5C%22%3A0%2C%5C%22is_mute%5C%22%\
-  3A1%2C%5C%22is_speed%5C%22%3A1%2C%5C%22is_visible%5C%22%3A1%7D%22;
-  record_force_login=%7B%22timestamp%22%3A1770713951805%2C%22force_login_video%\
-  22%3A1%2C%22force_login_live%22%3A0%2C%22force_login_direct_video%22%3A0%7D;
-  passport_csrf_token=39978816873cb615e350eef4faee80c7;
-  passport_csrf_token_default=39978816873cb615e350eef4faee80c7;
-  fg_uid=RID20260210165917DEFD56F47EF4B7C34862;
-  __security_mc_1_s_sdk_crypt_sdk=c38f678e-4ba6-80eb;
-  gulu_source_res=eyJwX2luIjoiYTQzNWI1MzE0YzVmNzMzODgwYmE1MjkwNjJlMzJmZWQ0ZWEzO\
-  GEzODQ5NGU0NmVmMWYwOTYyNjY2ZDUzMzRjOCJ9;
-  bd_ticket_guard_client_data=eyJiZC10aWNrZXQtZ3VhcmQtdmVyc2lvbiI6MiwiYmQtdGlja\
-  2V0LWd1YXJkLWl0ZXJhdGlvbi12ZXJzaW9uIjoxLCJiZC10aWNrZXQtZ3VhcmQtcmVlLXB1YmxpYy\
-  1rZXkiOiJCTHFVUUh2OGZEYVlRbWtjSkM0am9wTVdONjBxYjE5dW5zeVhlVEpjMXp4Z1NjcXdVMWg\
-  3dnhzMXlVZ0h2c2xxTnlGMVhzTDZTSmNCbGpQOE9ITDNzMVE9IiwiYmQtdGlja2V0LWd1YXJkLXdl\
-  Yi12ZXJzaW9uIjoyfQ%3D%3D; bd_ticket_guard_client_web_domain=2;
-  bd_ticket_guard_client_data_v2=eyJyZWVfcHVibGljX2tleSI6IkJMcVVRSHY4ZkRhWVFta2\
-  NKQzRqb3BNV042MHFiMTl1bnN5WGVUSmMxenhnU2Nxd1UxaDd2eHMxeVVnSHZzbHFOeUYxWHNMNlN\
-  KY0JsalA4T0hMM3MxUT0iLCJyZXFfY29udGVudCI6InNlY190cyIsInJlcV9zaWduIjoiL0FTWE5J\
-  TzZJTkhZMUtqMURTR3E2M2w0byswbjJZSXBNUHFXN2tvSmpIRT0iLCJzZWNfdHMiOiIjbGlYbXlSK\
-  29kcjN5MWEvN2pUS3BXVldsVFVlcElna1pBN2N1TEdGWERRMEtob0dWQk1jUUVFWVBpa2pUIn0%3D;
-  sdk_source_info=7e276470716a68645a606960273f276364697660272927676c715a6d60697\
-  536077273f276364697660272927666d776a68605a607d71606b766c6a6b5a7666776c7571273\
-  f275e58272927666a6b766a69605a696c6061273f27636469766027292762696a6764695a7364\
-  7776c6467696076273f275e582729277672715a646971273f2763646976602729277f6b5a6664\
-  75273f2763646976602729276d6a6e5a6b6a716c273f2763646976602729276c6b6f5a7f63672\
-  73f27636469766027292771273f273432303d303c36343235323234272927676c715a75776a71\
-  6a666a69273f2763646976602778;
-  bit_env=0fVV17p9PmYpyFLGOhW3jWN_MVmA8VJoObLkpGrPyeib5agK0OtwoZu3VMFMMdXWUSqZM\
-  ICIwazMgEwWJRFgz56XrBzfpEZC0R80pU04n0ZlDSoaxXSdEU6wrbGfHYWLtURkoJoPlpyk3tg95x\
-  Us52HBu24Pk92ljFmgfI5z-J5MUdVLTGM1ZAi2SZo69GG6LU9b0PJ-ykhrWgwUJYgZX1Ov6tU1Vrc\
-  3bG62pQs5qff5KFYwaOyTVldYTG_8FRpmEdWNWSZQiwjnqPnwa90ZOVLqZ7lIz040TzPUCBzhbXnB\
-  84TKwAE5aykJsTS6dMB0CSjwuVBbpa4_A3cS3bw9QN64UpURBi6A7kRva5yLmeHQQqQdcvWw9h7bf\
-  IFfm-qoZFAHvwQviBnZc1QyGU_0TAy1w8GM-BWXvhO7mdd7LY-Gul2EPCy6V__FZwdyDCKO325PGE\
-  wW7i13jJuJqnwHO1IA54hvkgpML5KL1BfEjquFjuNgpIfHVqaVbC8h1MzgNqe2yV1SbUTK3YIwrtl\
-  QzktRCiUuwmXqiDgIw2AjVXs%3D;
-  passport_auth_mix_state=v53z4rgfgbdg3x81hllsz693dub0pa9w;
-  odin_tt=d6726fbc4623dbfea8305ccbd7a1d0557e815729d3b9b8029940add6de7760b9d3e78\
-  8b39d7f78642b1cc9ce8947fa29a100f5605eb9205faa82a18e993b28260f29d96cb1ace07ab6\
-  4fe2e56af78e7c;
-  ttwid=1%7CvaFbM95KyXr3E8InSrfeFvIlhxOKxRgcDI9zOQanZNE%7C1770713972%7C6908001b\
-  f35f7bdfdc20e2981f69969cc5d5adb9d392ad523c4c91d50f8b003c;
-  biz_trace_id=dcf4d20a;"
-
-# 下载模式（user 链接生效）
-mode: [ post ]
-
-# 下载选项
+mode:
+- post
+limit:
+  post: 0
+incremental:
+  post: false
 download:
   music: true
   cover: true
   metadata: true
-
-# 时间过滤
 time_range:
-  start: ""
-  end: ""
-
-# 性能
+  start: ''
+  end: ''
 concurrency: 5
 retry: 3
 database: true
 log_level: INFO
+cookies:
+  douyin: __ac_nonce=06a08344c00ea8b7a9840; __ac_signature=_02B4Z6wo00f01ssF.PQAAIDDxaOf8fiMVxbLJfhAANjWad;
+    enter_pc_once=1; UIFID_TEMP=c28de8733f1ee511ccb0564a01187da29dead71fe4bbd42555f601f82dee571464711484000078f2974aadd7a3556fdbbd4bc15d9e554a847a1c8884c9663a1233149f284c16c9e8e20e04dc59f3f347;
+    x-web-secsdk-uid=5f13230e-701a-4ad0-ab01-b3acca8c8a40; s_v_web_id=verify_mp84kk1j_8Wqm4nYN_mPQD_4W1r_8CB3_4ytwvDhJa1EL;
+    =douyin.com; device_web_cpu_core=8; device_web_memory_size=8; is_support_rtm_web_ts=1;
+    hevc_supported=true; home_can_add_dy_2_desktop=%220%22; dy_swidth=1440; dy_sheight=900;
+    stream_recommend_feed_params=%22%7B%5C%22cookie_enabled%5C%22%3Atrue%2C%5C%22screen_width%5C%22%3A1440%2C%5C%22screen_height%5C%22%3A900%2C%5C%22browser_online%5C%22%3Atrue%2C%5C%22cpu_core_num%5C%22%3A8%2C%5C%22device_memory%5C%22%3A8%2C%5C%22downlink%5C%22%3A10%2C%5C%22effective_type%5C%22%3A%5C%224g%5C%22%2C%5C%22round_trip_time%5C%22%3A100%7D%22;
+    strategyABtestKey=%221778922579.364%22; fpk1=U2FsdGVkX1+d6+WgmZfhW0Ft8uvnfPk/T4cWz4CBu4vbVJTRDfBw67SbbIag6LKoU1/ahJNPlo+cjhEkYYdwKw==;
+    fpk2=02379953b93cd223243db09f1dd4e5b9; passport_csrf_token=343df81600fc35e1e405f701b9f4eeeb;
+    passport_csrf_token_default=343df81600fc35e1e405f701b9f4eeeb; bd_ticket_guard_client_web_domain=2;
+    ttwid=1%7C0mfVwm7Bz8W7fFco3pYl8SUgQjPDHqYwCKw99ktSTjM%7C1778922662%7C626b77b883c2c788803c00f9d61246419810e1dda74fa1753cf09191e19fca84;
+    sdk_source_info=7e276470716a68645a606960273f276364697660272927676c715a6d6069756077273f276364697660272927666d776a68605a607d71606b766c6a6b5a7666776c7571273f275e58272927666a6b766a69605a696c6061273f27636469766027292762696a6764695a7364776c6467696076273f275e582729277672715a646971273f2763646976602729277f6b5a666475273f2763646976602729276d6a6e5a6b6a716c273f2763646976602729276c6b6f5a7f6367273f27636469766027292771273f273c323134333337373c3d323234272927676c715a75776a716a666a69273f2763646976602778;
+    bit_env=3wZdolR7yniv8UApftWN7zNWzbJcV9Jd7BdF5GbPdvWJZ8PXeF4OObwFPL0SOb1nYU5Qu6VXQySX20_aOd0wjll2W9wwrY_p_8bHyRJjudu2rhx4o0deqcQ3v8iu1OegB4PZOLDuuA-w9Z86xKVCqab8WVzBUk3DAeGtfoTB6Ov4Ypn073SZ9cHK-508jdT4jTW6TqoiSHGp8HG5KmngsJZIFpH4Kwkba-7LA65XGUeuS3GMltD91d_3SS-mVgDI6iPs-iQf_MthXF4yOtWAW7jKq1DL9nhTK9YqQjeA1CYDaMnojVwHQOu9pxeveUl7OZysMLbIEqnSL8Xjsq_p9lCtw5w8Oft8u2zFlusyD07_xDW_UamlWbehAttVQHcep6X8g1XzyxBduieo94AdXriK0RJS2-qgemmOyCGyGg1DqwlV_KF1vaXUfNZfmN2fCtKgT9H8w3i9lruOtRJmhVntDPyyXrIJ6eVzkmYnN86iOiUlhpoV0MZgsJYYsvW7YUqE8odzXQ1sYVNCdwVXcB0u2V91rus5N9lcFx0W3ck%3D;
+    gulu_source_res=eyJwX2luIjoiMmI1N2YyYzgxMDY5M2NmZGQ5NjU4ZmEzZDhiNzhmNGNjYTQxZjE5NjYwNTVhNTM5NzI4MDEzMDRhYTM5MGVjNiJ9;
+    passport_auth_mix_state=49swgyxr3c6qebjt9lutsmtl1k94vv7nj49f50p594se0kjt; passport_mfa_token=CjedmnjtrEoztZrU4VWVKdzSt%2FdJYdSTrbk5wzCS%2F4rE71JVi2EDqlODKQ6zdtDZNUtbjL4Dl3%2BPGkoKPAAAAAAAAAAAAABQbbxyqNRxKIXB4q1USqlneEfH17jclYu77EVYGC%2FIzB3rKumc9%2BqNw6PSPA5bsTRCDxDbzZEOGPax0WwgAiIBA%2BpuS4Q%3D;
+    d_ticket=30a4ecffe02d6174c4c0f766e9542da648c65; passport_assist_user=CkG7ZCT-ljFb_fmJPDYXAjzvEA8TWtnuWoaUCTTiM_NvoXHylrwdidIiq0v---S9ovNS_QqXoarnjR5JhlkCCVo63hpKCjwAAAAAAAAAAAAAUG20o1t4mqnhCYI9B7PlBfuYQ45q10P_OB0gQjOsBg48lPcaQmzIe91AHhfvQRpD4I4Qq8yRDhiJr9ZUIAEiAQPuT8Lj;
+    n_mh=HQBly7ZRtjjBBl4GZ3uXKlEN03xihi3kYUD99j3mgsQ; sid_guard=b12f5d73a2ec7da7bb1898a5f51c23ff%7C1778922691%7C5183999%7CWed%2C+15-Jul-2026+09%3A11%3A30+GMT;
+    uid_tt=cfd0a2897723250972cb7a731596933c; uid_tt_ss=cfd0a2897723250972cb7a731596933c;
+    sid_tt=b12f5d73a2ec7da7bb1898a5f51c23ff; sessionid=b12f5d73a2ec7da7bb1898a5f51c23ff;
+    sessionid_ss=b12f5d73a2ec7da7bb1898a5f51c23ff; session_tlb_tag=sttt%7C11%7CsS9dc6Lsfae7GJil9Rwj__________-g1cxvh23uYHxPr8AduKJUQW2CzFEiLcgSBQEAXJUmuJM%3D;
+    is_staff_user=false; has_biz_token=false; sid_ucp_v1=1.0.0-KDdjYzM3NzUwZjQ0YjliYzJkYTU2MmMwZWE2NzQ5OWRlNjgzMDkyZmMKIQjT8ZDPgcz0BxDD6aDQBhjvMSAMMIi_hqAGOAdA9AdIBBoCaGwiIGIxMmY1ZDczYTJlYzdkYTdiYjE4OThhNWY1MWMyM2Zm;
+    ssid_ucp_v1=1.0.0-KDdjYzM3NzUwZjQ0YjliYzJkYTU2MmMwZWE2NzQ5OWRlNjgzMDkyZmMKIQjT8ZDPgcz0BxDD6aDQBhjvMSAMMIi_hqAGOAdA9AdIBBoCaGwiIGIxMmY1ZDczYTJlYzdkYTdiYjE4OThhNWY1MWMyM2Zm;
+    bd_ticket_guard_web_domain=2; _bd_ticket_crypt_cookie=f6dcecca806e27a378c38f31190bbd46;
+    __security_mc_1_s_sdk_sign_data_key_web_protect=17c515d8-4aea-a78a; __security_mc_1_s_sdk_cert_key=c0e598b5-4db0-b273;
+    __security_mc_1_s_sdk_crypt_sdk=28ef4c59-4e04-99d5; __security_server_data_status=1;
+    login_time=1778922690278; publish_badge_show_info=%220%2C0%2C0%2C1778922690696%22;
+    DiscoverFeedExposedAd=%7B%7D; SelfTabRedDotControl=%5B%5D; UIFID=c28de8733f1ee511ccb0564a01187da29dead71fe4bbd42555f601f82dee57147f141d752d8d1fe6f2c5397e91f944ae6b467ccadf671edce5637444e6245addb1f263d4d9cc76631998c0df0faf2051df93706f37f349f76b5473e9a3f69bd3488c3a73f8d064eb4efcd28023eb942065258d3e0c87171aa90833b0b33d53639120fec329c70f419baab40feffb77250ae4b3dac2d15e6a809469971d00076a;
+    IsDouyinActive=true; FOLLOW_LIVE_POINT_INFO=%22MS4wLjABAAAAUXptIeN8cAx3Rxi2MI7_TzKKNu4CvHkv2d56szwfpMnkQVumhDJwg7bMNdNE4ojv%2F1778947200000%2F0%2F1778922692164%2F0%22;
+    bd_ticket_guard_client_data=eyJiZC10aWNrZXQtZ3VhcmQtdmVyc2lvbiI6MiwiYmQtdGlja2V0LWd1YXJkLWl0ZXJhdGlvbi12ZXJzaW9uIjoxLCJiZC10aWNrZXQtZ3VhcmQtcmVlLXB1YmxpYy1rZXkiOiJCTll4aXNibGJHUWhPRW1wWlhHWElhSUZnSnFHVmNESnAyV1J6Zno4YWk3WnJ2S1ljL3FOT0VQQ3IxWWVPc2VjUTZabzJCK1o0K2JSbDNNWG83QS91cE09IiwiYmQtdGlja2V0LWd1YXJkLXdlYi12ZXJzaW9uIjoyfQ%3D%3D;
+    bd_ticket_guard_client_data_v2=eyJyZWVfcHVibGljX2tleSI6IkJOWXhpc2JsYkdRaE9FbXBaWEdYSWFJRmdKcUdWY0RKcDJXUnpmejhhaTdacnZLWWMvcU5PRVBDcjFZZU9zZWNRNlpvMkIrWjQrYlJsM01YbzdBL3VwTT0iLCJ0c19zaWduIjoidHMuMi4yZDc1YWE1YzFjMTUyMTE3MjgwZWQzYTdmZWI0YzM5YWQ3MjgxMjVjMmRiMmUxYzEyN2ExMjU4YTc5YTU4NDM2YzRmYmU4N2QyMzE5Y2YwNTMxODYyNGNlZGExNDkxMWNhNDA2ZGVkYmViZWRkYjJlMzBmY2U4ZDRmYTAyNTc1ZCIsInJlcV9jb250ZW50Ijoic2VjX3RzIiwicmVxX3NpZ24iOiJyZzdkcU9GbDRJUmlJOVZDWWM4bnVxcnlML1dycjJVL2g1Z0k0dUZpdGFnPSIsInNlY190cyI6IiN2anVrVEU0ODBYS0lKQ3p6dXdGaU1UZzUrWWY0VEJJQXA0akNiNndsaVJpMFBHeEdHLy9LM0Q4UWVEWEEifQ%3D%3D;
+    odin_tt=5d2f0e7ab4764aba30703a027e070a38cd7d52c721da396cd41d813ad469d9c60bef79fed4a00a936722b8f4b02cbaec41d08e7754914bbbe03bb119740eb584;
+    biz_trace_id=61883e9f
+  xhs: acw_tc=0a00dbc717771028881473360ea1194300df0ecd8ef63967cf2f7013a9f83e; abRequestId=68d85c04-db13-518c-954f-8c2048c0f830;
+    webBuild=6.7.4; xsecappid=xhs-pc-web; loadts=1777102888583; a1=19dc3961e8ch9dcptsg01ech9hmx7k5x8jxhuel4j30000427778;
+    webId=c601798945e78a97956e200b500ee010; websectiga=cffd9ddea65962b05ab048ac76962acee933d26157113bb213105a116241fa6c;
+    sec_poison_id=9a85c4fa-a0f3-4c5a-a707-083c751c9cc8; web_session=030037aedf245d6c45776536942e4a5202f0cd;
+    unread={%22ub%22:%2264268707000000000800cb2b%22%2C%22ue%22:%2264a945f1000000001e0106a2%22%2C%22uc%22:21};
+    gid=yjfSqjKJYfYSyjfSqjKydVd1YSxjfSU9Mk8yC4VdSxjx6xq8CWT2C78884JWWWY8jYS2Y4i2;
+    ets=1777102905131
