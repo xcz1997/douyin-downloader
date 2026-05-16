@@ -126,7 +126,10 @@ async def cmd_download(config: AppConfig, args: argparse.Namespace):
     else:
         try:
             xhs_state = await cookie_mgr.ensure_valid_cookie(platform="xhs")
-            xhs_session = XHSBrowserSession(xhs_state.value)
+            xhs_session = XHSBrowserSession(
+                xhs_state.value,
+                profile_dir=config.xhs.profile_dir or None,
+            )
             await xhs_session.start()
             registry.register(xhs_platform, XHSPlatformClient(xhs_session))
         except Exception as exc:
