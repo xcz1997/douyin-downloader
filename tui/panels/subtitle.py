@@ -18,13 +18,33 @@ _SOURCES = ["track", "ocr", "asr"]
 _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".webm"}
 
 
+def parse_ocr_param(raw: str) -> float | None:
+    """解析 OCR interval/similarity 输入；正浮点 → float，否则 None。"""
+    stripped = raw.strip()
+    if not stripped:
+        return None
+    try:
+        v = float(stripped)
+    except ValueError:
+        return None
+    return v if v > 0 else None
+
+
 def build_runner_spec(
-    path: str, sources: list[str], asr_model: str
+    path: str, sources: list[str], asr_model: str,
+    ocr_interval: float | None = None,
+    ocr_similarity: float | None = None,
 ) -> dict[str, Any]:
     """Pure resolver → unit-testable."""
     if not sources:
         return {"error": "未选择任何字幕源"}
-    return {"path": path, "sources": sources, "asr_model": asr_model}
+    return {
+        "path": path,
+        "sources": sources,
+        "asr_model": asr_model,
+        "ocr_interval": ocr_interval,
+        "ocr_similarity": ocr_similarity,
+    }
 
 
 class SubtitlePanel(Static):
@@ -38,13 +58,28 @@ class SubtitlePanel(Static):
             for s in _SOURCES:
                 yield Checkbox(s, value=(s == "ocr"), id=f"sub-src-{s}")
             yield Input(value="0.6b", id="sub-asr-model")
+            yield Label("OCR 抽帧间隔（秒）", id="sub-ocr-interval-label")
+            yield Input(value="0.5", id="sub-ocr-interval")
+            yield Label("OCR 相似度阈值（0-1）", id="sub-ocr-similarity-label")
+            yield Input(value="0.7", id="sub-ocr-similarity")
             yield Button("开始提取", id="sub-start", variant="primary")
             yield Button("停止", id="sub-stop")
             yield Label("", id="sub-msg")
 
     def _dispatch(self, path: str, sources: list[str],
                   asr_model: str) -> None:
-        spec = build_runner_spec(path, sources, asr_model)
+        try:
+            raw_interval = self.query_one("#sub-ocr-interval", Input).value
+            raw_similarity = self.query_one("#sub-ocr-similarity", Input).value
+        except Exception:
+            raw_interval = ""
+            raw_similarity = ""
+        ocr_interval = parse_ocr_param(raw_interval)
+        _sim = parse_ocr_param(raw_similarity)
+        ocr_similarity = _sim if (_sim is not None and 0 < _sim <= 1) else None
+        spec = build_runner_spec(path, sources, asr_model,
+                                 ocr_interval=ocr_interval,
+                                 ocr_similarity=ocr_similarity)
         try:
             msg = self.query_one("#sub-msg", Label)
         except Exception:
@@ -78,7 +113,13 @@ class SubtitlePanel(Static):
 
                 impls = []
                 if "ocr" in spec["sources"]:
-                    impls.append(OCRSource())
+                    ocr_kw = {
+                        k: v for k, v in (
+                            ("interval", spec.get("ocr_interval")),
+                            ("similarity", spec.get("ocr_similarity")),
+                        ) if v is not None
+                    }
+                    impls.append(OCRSource(**ocr_kw))
                 if "track" in spec["sources"]:
                     from core.subtitle.track_source import TrackSource
                     impls.append(TrackSource())
