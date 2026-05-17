@@ -50,6 +50,11 @@ class QuitConfirmScreen(ModalScreen):
 
 _SECTIONS = ["下载", "字幕", "登录", "设置"]
 
+# VSCode-activity-bar style icons (Nerd Font, FontAwesome-classic
+# codepoints — present in every Nerd Font patch). Shown above the
+# label; falls back to tofu boxes only if no Nerd Font is installed.
+_NAV_ICONS = [chr(0xF019), chr(0xF0F6), chr(0xF090), chr(0xF013)]
+
 # Textual IDs must be ASCII-only — map section names to stable ASCII IDs.
 _SECTION_ID: dict[str, str] = {
     "下载": "panel-download",
@@ -73,21 +78,35 @@ class DownloaderApp(App):
     }
 
     #sidebar {
-        width: 20;
-        padding: 1 0;
+        width: 14;
         background: #16161a;
+        align: center middle;
     }
-    #sidebar > ListItem {
-        padding: 0 2;
+    #nav {
+        width: 100%;
+        height: auto;
+        background: transparent;
+        border: none;
+        scrollbar-size: 0 0;
+    }
+    #nav > ListItem {
+        height: 4;
+        width: 100%;
+        padding: 0;
         color: #7a7a85;
+        content-align: center middle;
     }
-    #sidebar > ListItem.-highlight {
+    #nav > ListItem > Label {
+        width: 100%;
+        text-align: center;
+    }
+    #nav > ListItem.-highlight {
         color: #fab283;
         text-style: bold;
         border-left: thick #fab283;
         background: #1d1d22;
     }
-    ListView:focus > ListItem.-highlight {
+    #nav:focus > ListItem.-highlight {
         color: #fab283;
         background: #1d1d22;
     }
@@ -174,12 +193,14 @@ class DownloaderApp(App):
         with Vertical():
             yield Header(show_clock=False)
             with Horizontal(id="main-row"):
-                lv = ListView(
-                    *[ListItem(Label(s), id=f"nav-{i}")
-                      for i, s in enumerate(_SECTIONS)],
-                    id="sidebar",
-                )
-                yield lv
+                with Vertical(id="sidebar"):
+                    yield ListView(
+                        *[ListItem(
+                            Label(f"{_NAV_ICONS[i]}\n{s}"),
+                            id=f"nav-{i}")
+                          for i, s in enumerate(_SECTIONS)],
+                        id="nav",
+                    )
                 with Vertical(id="content"):
                     yield SettingsPanel(self._config_path)
                     yield DownloadPanel(self._config_path)
