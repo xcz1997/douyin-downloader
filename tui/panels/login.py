@@ -10,7 +10,7 @@ import importlib
 from typing import Callable
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Button, Label, Static
 
 
@@ -40,7 +40,7 @@ class LoginPanel(Static):
         super().__init__(id="panel-login")
 
     def compose(self) -> ComposeResult:
-        with Vertical():
+        with VerticalScroll():
             with Vertical(classes="card") as g:
                 g.border_title = "登录方式"
                 yield Button("抖音扫码登录 (CloakBrowser)",

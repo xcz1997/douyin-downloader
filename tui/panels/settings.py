@@ -7,7 +7,7 @@ from typing import Any
 from pathlib import Path
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Checkbox, Input, Label, Static
 
 import yaml
@@ -125,7 +125,7 @@ class SettingsPanel(Static):
         return inp.value
 
     def compose(self) -> ComposeResult:
-        with Vertical():
+        with VerticalScroll():
             with Vertical(classes="card") as g_dl:
                 g_dl.border_title = "下载设置"
                 for key, label, _ in _FIELDS:

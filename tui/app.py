@@ -92,7 +92,14 @@ class DownloaderApp(App):
         background: #1d1d22;
     }
 
-    #content { width: 1fr; padding: 1 3; overflow-y: auto; }
+    #content { width: 1fr; padding: 1 3; }
+    #content > Static { height: 1fr; }
+    #content VerticalScroll {
+        height: 1fr;
+        scrollbar-size-vertical: 1;
+        scrollbar-color: #fab283;
+        scrollbar-background: #16161a;
+    }
 
     #main-row { height: 1fr; }
 
@@ -124,6 +131,7 @@ class DownloaderApp(App):
     Button.-error { background: #e06c75; color: #16161a; }
 
     Input {
+        height: 3;
         margin-bottom: 1;
         background: #1f1f25;
         border: tall #2e2e36;
@@ -196,6 +204,16 @@ class DownloaderApp(App):
         return self.query_one(SettingsPanel).value(key)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
+        idx = int(event.item.id.split("-")[1])
+        self.show_section(_SECTIONS[idx])
+
+    def on_list_view_highlighted(
+        self, event: ListView.Highlighted
+    ) -> None:
+        # Switch on arrow-key navigation too, not only Enter/click —
+        # otherwise the highlight moves but content stays stale.
+        if event.item is None or event.item.id is None:
+            return
         idx = int(event.item.id.split("-")[1])
         self.show_section(_SECTIONS[idx])
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Checkbox, Input, Label, RadioButton, RadioSet, Static
 
 from core.config import ConfigLoader
@@ -58,7 +58,7 @@ class DownloadPanel(Static):
             return "并发数（留空用配置）"
 
     def compose(self) -> ComposeResult:
-        with Vertical():
+        with VerticalScroll():
             with Vertical(classes="card") as g_src:
                 g_src.border_title = "链接来源"
                 with RadioSet(id="dl-source"):

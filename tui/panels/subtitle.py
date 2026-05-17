@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Checkbox, Input, Label, Static
 
 _SOURCES = ["track", "ocr", "asr"]
@@ -53,7 +53,7 @@ class SubtitlePanel(Static):
         self._worker = None
 
     def compose(self) -> ComposeResult:
-        with Vertical():
+        with VerticalScroll():
             with Vertical(classes="card") as g_in:
                 g_in.border_title = "输入"
                 yield Input(placeholder="视频文件或目录路径",
