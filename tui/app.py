@@ -11,6 +11,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import ListItem, ListView, Label, Static
 
 from tui.panels.download import DownloadPanel
+from tui.panels.login import LoginPanel
 from tui.panels.settings import SettingsPanel
 from tui.panels.subtitle import SubtitlePanel
 from tui.widgets import LogPane, StatusBar
@@ -56,7 +57,7 @@ class DownloaderApp(App):
                     yield SettingsPanel(self._config_path)
                     yield DownloadPanel(self._config_path)
                     yield SubtitlePanel()
-                    yield Static("登录（Phase 4）", id="panel-login")
+                    yield LoginPanel()
             yield LogPane()
             yield StatusBar()
 
