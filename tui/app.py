@@ -10,6 +10,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import ListItem, ListView, Label, Static
 
+from tui.panels.download import DownloadPanel
 from tui.panels.settings import SettingsPanel
 from tui.widgets import LogPane, StatusBar
 
@@ -52,7 +53,7 @@ class DownloaderApp(App):
                 yield lv
                 with Vertical(id="content"):
                     yield SettingsPanel(self._config_path)
-                    yield Static("下载（Phase 2）", id="panel-download")
+                    yield DownloadPanel(self._config_path)
                     yield Static("字幕（Phase 3）", id="panel-subtitle")
                     yield Static("登录（Phase 4）", id="panel-login")
             yield LogPane()
