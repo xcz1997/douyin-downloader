@@ -35,6 +35,7 @@ class DownloadPanel(Static):
         super().__init__(id="panel-download", **kwargs)
         self._config_path = config_path
         self._worker = None
+        self._xhs_session = None
 
     def compose(self) -> ComposeResult:
         with Vertical():
@@ -161,6 +162,7 @@ class DownloadPanel(Static):
                         profile_dir=cfg.xhs.profile_dir or None,
                     )
                     await xhs_session.start()
+                    self._xhs_session = xhs_session
                     registry.register(xhs_platform,
                                       XHSPlatformClient(xhs_session))
                 except Exception as exc:
@@ -189,6 +191,7 @@ class DownloadPanel(Static):
                 await engine.close()
             if xhs_session is not None:
                 await xhs_session.close()
+                self._xhs_session = None
             if tracer is not None:
                 tracer.close()
             if dl is not None:
