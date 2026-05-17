@@ -15,6 +15,18 @@ from textual.widgets import Button, Input, Label, RadioButton, RadioSet, Static
 from core.config import ConfigLoader
 
 
+def parse_concurrency(raw: str) -> "int | None":
+    """解析并发数输入。空/非正整数/非数字 → None；正整数 → int。"""
+    s = raw.strip()
+    if not s:
+        return None
+    try:
+        n = int(s)
+    except ValueError:
+        return None
+    return n if n > 0 else None
+
+
 def build_pipeline_args(
     source: str, manual_url: str, config_path: str
 ) -> dict[str, Any]:
@@ -37,6 +49,14 @@ class DownloadPanel(Static):
         self._worker = None
         self._xhs_session = None
 
+    def _concurrency_placeholder(self) -> str:
+        """读一次 config.thread 作为并发 Input 的占位文案；读失败兜底。"""
+        try:
+            t = ConfigLoader(self._config_path).load().thread
+            return f"并发数（留空用配置 {t}）"
+        except Exception:
+            return "并发数（留空用配置）"
+
     def compose(self) -> ComposeResult:
         with Vertical():
             with RadioSet(id="dl-source"):
@@ -44,11 +64,18 @@ class DownloadPanel(Static):
                 yield RadioButton("手动输入 URL", id="src-manual")
             yield Input(placeholder="https://v.douyin.com/...",
                         id="dl-url")
+            yield Input(placeholder=self._concurrency_placeholder(),
+                        id="dl-concurrency")
             yield Button("开始下载", id="dl-start", variant="primary")
             yield Button("停止", id="dl-stop")
             yield Label("", id="dl-msg")
 
-    async def start_download(self, source: str, manual_url: str) -> None:
+    async def start_download(
+        self,
+        source: str,
+        manual_url: str,
+        concurrency_override: "int | None" = None,
+    ) -> None:
         args = build_pipeline_args(source, manual_url, self._config_path)
         sink = self._make_sink()
         try:
@@ -62,7 +89,7 @@ class DownloadPanel(Static):
         if msg is not None:
             msg.update("下载中…")
         await self._run_download(
-            args["links"], sink, args["interactive"]
+            args["links"], sink, args["interactive"], concurrency_override
         )
 
     def _make_sink(self):
@@ -102,7 +129,8 @@ class DownloadPanel(Static):
             pct = int(p["bytes_done"] / bt * 100) if bt else 0
             log.write(f"  ↳ {p.get('name','')}: {pct}%")
 
-    async def _run_download(self, links, sink, interactive) -> None:
+    async def _run_download(self, links, sink, interactive,
+                            concurrency_override=None) -> None:
         """Construct and run the real DownloadPipeline. Heavy wiring lives
         here so tests can monkeypatch this method wholesale.
 
@@ -128,6 +156,8 @@ class DownloadPanel(Static):
         try:
             cfg = ConfigLoader(self._config_path).load()
             cfg.links = links
+            if concurrency_override is not None:
+                cfg.thread = concurrency_override
             log_dir = Path("logs")
             log_dir.mkdir(exist_ok=True)
             dl = DualLogger(log_dir=log_dir, console_level="INFO")
@@ -204,8 +234,11 @@ class DownloadPanel(Static):
                    if self.query_one("#src-manual", RadioButton).value
                    else "config")
             url = self.query_one("#dl-url", Input).value
+            raw_concurrency = self.query_one("#dl-concurrency", Input).value
+            concurrency_override = parse_concurrency(raw_concurrency)
             self._worker = self.run_worker(
-                self.start_download(src, url), exclusive=True
+                self.start_download(src, url, concurrency_override),
+                exclusive=True,
             )
         elif event.button.id == "dl-stop":
             if self._worker is not None:

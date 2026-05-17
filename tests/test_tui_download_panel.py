@@ -27,7 +27,8 @@ def test_build_pipeline_args_config_source(tmp_path):
 async def test_panel_start_invokes_runner(monkeypatch):
     calls = {}
 
-    async def fake_run(self, links, sink, interactive):
+    async def fake_run(self, links, sink, interactive,
+                       concurrency_override=None):
         calls["links"] = links
         calls["interactive"] = interactive
         sink.set_status("done")
