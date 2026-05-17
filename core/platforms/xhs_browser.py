@@ -1,8 +1,17 @@
-"""Long-lived Playwright session for XHS data capture.
+"""Long-lived CloakBrowser session for XHS data capture.
 
-Owns one chromium browser + one context seeded with the user's XHS
-cookie. Shared by XHSPlatformClient across all XHS calls in a pipeline
-run; torn down in downloader.py's cleanup phase.
+Two modes:
+- persistent (xhs.profile_dir set): launch_persistent_context_async on a
+  real profile pre-populated by xhs_login.py. Trusted, no cookie inject,
+  no interactive block (headless-capable).
+- ephemeral (no profile_dir): launch_context_async + add_cookies from the
+  config Cookie header; keeps the operator login-confirm prompt when headed.
+
+CloakBrowser ships C++-level stealth (navigator.webdriver, canvas/WebGL,
+TLS/JA3, CDP) and a self-consistent native UA — so we never inject a JS
+webdriver patch, never override user_agent, never pass
+--disable-blink-features. Missing cloakbrowser hard-fails (no silent
+downgrade to a detectable Playwright stack).
 """
 
 from __future__ import annotations
@@ -12,7 +21,7 @@ from contextlib import asynccontextmanager
 
 
 def _cookie_header_to_playwright(raw: str) -> list[dict]:
-    """Parse a raw Cookie header into Playwright's add_cookies shape."""
+    """Parse a raw Cookie header into add_cookies shape."""
     out: list[dict] = []
     for part in raw.split(";"):
         part = part.strip()
@@ -29,10 +38,10 @@ def _cookie_header_to_playwright(raw: str) -> list[dict]:
 
 
 class XHSBrowserSession:
-    """Shared Playwright browser + context for all XHS calls in one run.
+    """Shared CloakBrowser context for all XHS calls in one run.
 
     Usage:
-        session = XHSBrowserSession(cookie_header)
+        session = XHSBrowserSession(cookie_header, profile_dir=...)
         await session.start()
         try:
             async with session.page() as page:
@@ -45,68 +54,59 @@ class XHSBrowserSession:
         self, cookie_header: str, *,
         headless: bool | None = None,
         interactive: bool | None = None,
+        profile_dir: str | None = None,
     ) -> None:
-        # Default to headed: headless chromium exposes navigator.webdriver,
-        # HeadlessChrome in UA, and a few other tells that XHS uses for bot
-        # detection. Locally we have a display, so go headed by default.
-        # CI/server (no display) sets XHS_HEADLESS=1 to opt back in.
+        # Headed by default locally (a display exists); CI/server sets
+        # XHS_HEADLESS=1. CloakBrowser is headless-safe, but headed keeps
+        # parity with the operator login-confirm flow in ephemeral mode.
         if headless is None:
             headless = os.environ.get("XHS_HEADLESS", "0") == "1"
-        # In interactive mode (default whenever we have a display), start()
-        # opens a page to XHS and blocks until the operator confirms the
-        # window shows a logged-in state. This bypasses the "config cookie
-        # was valid when extracted but the server now distrusts it" trap:
-        # the operator can re-scan the QR in the same chromium context if
-        # needed, then press Enter to proceed.
+        # Interactive confirm only matters in ephemeral mode (injected
+        # cookie may be stale). Persistent mode trusts the profile.
         if interactive is None:
             interactive = not headless
         self._cookie_header = cookie_header
         self._headless = headless
         self._interactive = interactive
-        self._pw = None
-        self._browser = None
+        self._profile_dir = (profile_dir or "").strip() or None
         self._context = None
 
     async def start(self) -> None:
-        """Launch chromium and create a context with XHS cookies."""
-        from playwright.async_api import async_playwright
+        """Launch a CloakBrowser context (persistent or ephemeral)."""
+        try:
+            import cloakbrowser
+        except ImportError as exc:
+            raise RuntimeError(
+                "XHS 需要 CloakBrowser：pip install cloakbrowser。"
+                "（不回退 Playwright——避免静默使用可被检测的弱栈）"
+            ) from exc
 
-        self._pw = await async_playwright().start()
-        # Anti-detection mirrors xhs_cookie_extractor.py — without these,
-        # XHS sees navigator.webdriver=true and Chrome's automation
-        # flag, voids the injected web_session server-side, and the
-        # page renders as logged-out even with a valid cookie.
-        self._browser = await self._pw.chromium.launch(
-            headless=self._headless,
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        self._context = await self._browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 900},
-        )
-        await self._context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', "
-            "{ get: () => undefined });"
-        )
-        await self._context.add_cookies(
-            _cookie_header_to_playwright(self._cookie_header),
-        )
-        if self._interactive:
-            await self._await_login_confirmation()
+        # No user_agent override (CloakBrowser native UA is self-consistent
+        # with its navigator.userAgentData / JA3). humanize=True adds
+        # human-like input curves/timing.
+        launch_kwargs = dict(headless=self._headless, humanize=True)
+
+        if self._profile_dir:
+            self._context = await cloakbrowser.launch_persistent_context_async(
+                user_data_dir=self._profile_dir, **launch_kwargs
+            )
+            # persistent: trust the profile — no cookie inject, no block
+        else:
+            self._context = await cloakbrowser.launch_context_async(
+                **launch_kwargs
+            )
+            await self._context.add_cookies(
+                _cookie_header_to_playwright(self._cookie_header)
+            )
+            if self._interactive:
+                await self._await_login_confirmation()
 
     async def _await_login_confirmation(self) -> None:
-        """Open XHS in a page and block until the operator confirms login.
+        """Open XHS and block until the operator confirms login.
 
         The injected cookie may be valid, expired, or risk-controlled —
-        we don't try to detect; we ask. If the page is already logged
-        in, the operator presses Enter immediately. If not, they scan
-        the QR in this same chromium context (so the resulting session
-        is bound to the indistinguishable browser fingerprint we'll use
-        for subsequent fetches) and then press Enter.
+        we don't detect; we ask. Operator can re-scan the QR in this same
+        context, then press Enter.
         """
         import asyncio
 
@@ -127,16 +127,13 @@ class XHSBrowserSession:
             await page.close()
 
     async def close(self) -> None:
-        """Release all Playwright resources. Idempotent."""
+        """Release the CloakBrowser context. Idempotent."""
         if self._context is not None:
-            await self._context.close()
+            try:
+                await self._context.close()
+            except Exception:
+                pass
             self._context = None
-        if self._browser is not None:
-            await self._browser.close()
-            self._browser = None
-        if self._pw is not None:
-            await self._pw.stop()
-            self._pw = None
 
     @asynccontextmanager
     async def page(self):

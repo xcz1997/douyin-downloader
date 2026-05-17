@@ -19,6 +19,11 @@ class SubtitleConfig:
 
 
 @dataclass
+class XHSConfig:
+    profile_dir: str = ""
+
+
+@dataclass
 class AppConfig:
     links: list[str]
     save_path: Path
@@ -35,6 +40,7 @@ class AppConfig:
     retry_times: int
     log_level: str
     subtitle: SubtitleConfig = field(default_factory=SubtitleConfig)
+    xhs: XHSConfig = field(default_factory=XHSConfig)
 
 
 @dataclass

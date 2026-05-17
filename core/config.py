@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from core.models import AppConfig, DownloadOptions, SubtitleConfig
+from core.models import AppConfig, DownloadOptions, SubtitleConfig, XHSConfig
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +38,7 @@ _DEFAULTS: dict[str, Any] = {
         "asr": {"model": "0.6b"},
         "ocr": {"interval": 0.5, "similarity": 0.7},
     },
+    "xhs": {"profile_dir": ""},
 }
 
 
@@ -284,6 +285,7 @@ class ConfigLoader:
                 "asr": {"model": "0.6b"},
                 "ocr": {"interval": 0.5, "similarity": 0.7},
             },
+            "xhs": {"profile_dir": ""},
         }
         with dest.open("w", encoding="utf-8") as fh:
             yaml.dump(default_content, fh, allow_unicode=True, default_flow_style=False, sort_keys=False)
@@ -409,6 +411,10 @@ class ConfigLoader:
             ocr_similarity=float((_sub.get("ocr", {}) or {}).get("similarity", 0.7)),
         )
 
+        # xhs sub-block → XHSConfig
+        _xhs = data.get("xhs", {}) or {}
+        xhs = XHSConfig(profile_dir=str(_xhs.get("profile_dir", "") or ""))
+
         return AppConfig(
             links=links,
             save_path=save_path,
@@ -425,4 +431,5 @@ class ConfigLoader:
             retry_times=int(data.get("retry", 3)),
             log_level=str(data.get("log_level", "INFO")),
             subtitle=subtitle,
+            xhs=xhs,
         )
