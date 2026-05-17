@@ -152,6 +152,19 @@ xhs:
 
 依赖：`pip install cloakbrowser`（缺它 XHS 会明确报错并跳过，不静默降级；抖音不受影响）。
 
+### TUI 主界面（推荐入口）
+
+整合下载（抖音/小红书）、字幕提取、登录、设置于一个终端界面：
+
+```bash
+pip install textual
+python tui.py            # 或 python tui.py -c config.yml
+```
+
+左侧导航切换区块（下载 / 字幕 / 登录 / 设置），底部常驻日志/进度。TUI 与命令行
+脚本共用同一 `core/` 后端；`downloader.py` / `extract_text.py` / `xhs_login.py` /
+`cloak_douyin_login.py` 仍可单独脚本化使用，行为不变。
+
 ### 命令行参数
 
 ```bash
