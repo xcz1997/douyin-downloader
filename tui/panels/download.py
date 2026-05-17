@@ -10,7 +10,7 @@ from typing import Any
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import Button, Input, Label, RadioButton, RadioSet, Static
+from textual.widgets import Button, Checkbox, Input, Label, RadioButton, RadioSet, Static
 
 from core.config import ConfigLoader
 
@@ -66,6 +66,7 @@ class DownloadPanel(Static):
                         id="dl-url")
             yield Input(placeholder=self._concurrency_placeholder(),
                         id="dl-concurrency")
+            yield Checkbox("同时提取字幕", id="dl-subtitle")
             yield Button("开始下载", id="dl-start", variant="primary")
             yield Button("停止", id="dl-stop")
             yield Label("", id="dl-msg")
@@ -75,6 +76,7 @@ class DownloadPanel(Static):
         source: str,
         manual_url: str,
         concurrency_override: "int | None" = None,
+        extract_subtitle: bool = False,
     ) -> None:
         args = build_pipeline_args(source, manual_url, self._config_path)
         sink = self._make_sink()
@@ -89,7 +91,8 @@ class DownloadPanel(Static):
         if msg is not None:
             msg.update("下载中…")
         await self._run_download(
-            args["links"], sink, args["interactive"], concurrency_override
+            args["links"], sink, args["interactive"], concurrency_override,
+            extract_subtitle,
         )
 
     def _make_sink(self):
@@ -130,7 +133,8 @@ class DownloadPanel(Static):
             log.write(f"  ↳ {p.get('name','')}: {pct}%")
 
     async def _run_download(self, links, sink, interactive,
-                            concurrency_override=None) -> None:
+                            concurrency_override=None,
+                            extract_subtitle: bool = False) -> None:
         """Construct and run the real DownloadPipeline. Heavy wiring lives
         here so tests can monkeypatch this method wholesale.
 
@@ -158,6 +162,8 @@ class DownloadPanel(Static):
             cfg.links = links
             if concurrency_override is not None:
                 cfg.thread = concurrency_override
+            if extract_subtitle:
+                cfg.subtitle.enabled = True
             log_dir = Path("logs")
             log_dir.mkdir(exist_ok=True)
             dl = DualLogger(log_dir=log_dir, console_level="INFO")
@@ -236,8 +242,10 @@ class DownloadPanel(Static):
             url = self.query_one("#dl-url", Input).value
             raw_concurrency = self.query_one("#dl-concurrency", Input).value
             concurrency_override = parse_concurrency(raw_concurrency)
+            extract_subtitle = self.query_one("#dl-subtitle", Checkbox).value
             self._worker = self.run_worker(
-                self.start_download(src, url, concurrency_override),
+                self.start_download(src, url, concurrency_override,
+                                    extract_subtitle),
                 exclusive=True,
             )
         elif event.button.id == "dl-stop":

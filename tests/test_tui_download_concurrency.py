@@ -30,7 +30,8 @@ async def test_concurrency_override_applied(monkeypatch):
     """填正整数 → _run_download 被调时 cfg.thread == 输入值。"""
     calls = {}
 
-    async def fake_run(self, links, sink, interactive, concurrency_override):
+    async def fake_run(self, links, sink, interactive,
+                       concurrency_override=None, extract_subtitle=False):
         calls["concurrency_override"] = concurrency_override
         sink.set_status("done")
 
@@ -57,7 +58,8 @@ async def test_concurrency_empty_no_override(monkeypatch, tmp_path):
 
     calls = {}
 
-    async def fake_run(self, links, sink, interactive, concurrency_override):
+    async def fake_run(self, links, sink, interactive,
+                       concurrency_override=None, extract_subtitle=False):
         calls["concurrency_override"] = concurrency_override
         sink.set_status("done")
 

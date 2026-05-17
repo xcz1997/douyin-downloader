@@ -28,7 +28,7 @@ async def test_panel_start_invokes_runner(monkeypatch):
     calls = {}
 
     async def fake_run(self, links, sink, interactive,
-                       concurrency_override=None):
+                       concurrency_override=None, extract_subtitle=False):
         calls["links"] = links
         calls["interactive"] = interactive
         sink.set_status("done")
