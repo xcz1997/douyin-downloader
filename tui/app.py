@@ -9,7 +9,8 @@ from __future__ import annotations
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, ListItem, ListView, Label, Static
+from textual.widgets import (Button, Header, ListItem, ListView, Label,
+                             Static)
 
 from tui.panels.download import DownloadPanel
 from tui.panels.login import LoginPanel
@@ -59,13 +60,99 @@ _SECTION_ID: dict[str, str] = {
 
 
 class DownloaderApp(App):
+    # opencode-inspired palette: dark neutral surface, single warm-orange
+    # accent used sparingly (focus / primary / selected), everything else
+    # muted. Source: https://opencode.ai/docs/themes/
     CSS = """
-    #sidebar { width: 16; border-right: solid $accent; }
-    #content { width: 1fr; }
-    #logpane { height: 10; border-top: solid $accent; }
-    #statusbar { height: 1; background: $panel; }
+    Screen { background: #16161a; color: #d4d4d8; }
+
+    Header {
+        background: #16161a;
+        color: #fab283;
+        text-style: bold;
+    }
+
+    #sidebar {
+        width: 20;
+        padding: 1 0;
+        background: #16161a;
+    }
+    #sidebar > ListItem {
+        padding: 0 2;
+        color: #7a7a85;
+    }
+    #sidebar > ListItem.-highlight {
+        color: #fab283;
+        text-style: bold;
+        border-left: thick #fab283;
+        background: #1d1d22;
+    }
+    ListView:focus > ListItem.-highlight {
+        color: #fab283;
+        background: #1d1d22;
+    }
+
+    #content { width: 1fr; padding: 1 3; overflow-y: auto; }
+
+    #main-row { height: 1fr; }
+
+    .card {
+        border: round #2e2e36;
+        border-title-color: #6e6e78;
+        padding: 0 1;
+        margin-bottom: 1;
+        height: auto;
+        background: #1a1a1f;
+    }
+
+    .actions { height: auto; margin-top: 1; }
+    .actions Button { margin-right: 2; }
+
+    Button {
+        min-width: 14;
+        background: #26262e;
+        color: #d4d4d8;
+        border: none;
+    }
+    Button:hover { background: #30303a; }
+    Button.-primary {
+        background: #fab283;
+        color: #16161a;
+        text-style: bold;
+    }
+    Button.-primary:hover { background: #ffc79a; }
+    Button.-error { background: #e06c75; color: #16161a; }
+
+    Input {
+        margin-bottom: 1;
+        background: #1f1f25;
+        border: tall #2e2e36;
+        color: #d4d4d8;
+    }
+    Input:focus { border: tall #fab283; }
+    Checkbox { margin-bottom: 1; background: transparent; }
+    Checkbox.-on > .toggle--button { color: #fab283; }
+    RadioButton.-on > .toggle--button { color: #fab283; }
+
+    .msg { color: #6e6e78; margin-top: 1; }
+
+    #logpane {
+        height: 10;
+        border: round #2e2e36;
+        border-title-color: #6e6e78;
+        background: #16161a;
+        color: #9a9aa5;
+        padding: 0 1;
+    }
+    #statusbar {
+        height: 1;
+        background: #1a1a1f;
+        color: #7a7a85;
+        padding: 0 2;
+    }
     """
     BINDINGS = [("q", "quit", "退出")]
+    TITLE = "抖音下载器"
 
     def __init__(self, config_path: str = "config.yml") -> None:
         super().__init__()
@@ -77,7 +164,8 @@ class DownloaderApp(App):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            with Horizontal():
+            yield Header(show_clock=False)
+            with Horizontal(id="main-row"):
                 lv = ListView(
                     *[ListItem(Label(s), id=f"nav-{i}")
                       for i, s in enumerate(_SECTIONS)],
