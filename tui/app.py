@@ -50,6 +50,11 @@ class QuitConfirmScreen(ModalScreen):
 
 _SECTIONS = ["下载", "字幕", "登录", "设置"]
 
+# VSCode-activity-bar style icons (Nerd Font, FontAwesome-classic
+# codepoints — present in every Nerd Font patch). Shown above the
+# label; falls back to tofu boxes only if no Nerd Font is installed.
+_NAV_ICONS = [chr(0xF019), chr(0xF0F6), chr(0xF090), chr(0xF013)]
+
 # Textual IDs must be ASCII-only — map section names to stable ASCII IDs.
 _SECTION_ID: dict[str, str] = {
     "下载": "panel-download",
@@ -73,26 +78,47 @@ class DownloaderApp(App):
     }
 
     #sidebar {
-        width: 20;
-        padding: 1 0;
+        width: 14;
         background: #16161a;
+        align: center middle;
     }
-    #sidebar > ListItem {
-        padding: 0 2;
+    #nav {
+        width: 100%;
+        height: auto;
+        background: transparent;
+        border: none;
+        scrollbar-size: 0 0;
+    }
+    #nav > ListItem {
+        height: 4;
+        width: 100%;
+        padding: 0;
         color: #7a7a85;
+        content-align: center middle;
     }
-    #sidebar > ListItem.-highlight {
+    #nav > ListItem > Label {
+        width: 100%;
+        text-align: center;
+    }
+    #nav > ListItem.-highlight {
         color: #fab283;
         text-style: bold;
         border-left: thick #fab283;
         background: #1d1d22;
     }
-    ListView:focus > ListItem.-highlight {
+    #nav:focus > ListItem.-highlight {
         color: #fab283;
         background: #1d1d22;
     }
 
-    #content { width: 1fr; padding: 1 3; overflow-y: auto; }
+    #content { width: 1fr; padding: 1 3; }
+    #content > Static { height: 1fr; }
+    #content VerticalScroll {
+        height: 1fr;
+        scrollbar-size-vertical: 1;
+        scrollbar-color: #fab283;
+        scrollbar-background: #16161a;
+    }
 
     #main-row { height: 1fr; }
 
@@ -124,6 +150,7 @@ class DownloaderApp(App):
     Button.-error { background: #e06c75; color: #16161a; }
 
     Input {
+        height: 3;
         margin-bottom: 1;
         background: #1f1f25;
         border: tall #2e2e36;
@@ -166,12 +193,14 @@ class DownloaderApp(App):
         with Vertical():
             yield Header(show_clock=False)
             with Horizontal(id="main-row"):
-                lv = ListView(
-                    *[ListItem(Label(s), id=f"nav-{i}")
-                      for i, s in enumerate(_SECTIONS)],
-                    id="sidebar",
-                )
-                yield lv
+                with Vertical(id="sidebar"):
+                    yield ListView(
+                        *[ListItem(
+                            Label(f"{_NAV_ICONS[i]}\n{s}"),
+                            id=f"nav-{i}")
+                          for i, s in enumerate(_SECTIONS)],
+                        id="nav",
+                    )
                 with Vertical(id="content"):
                     yield SettingsPanel(self._config_path)
                     yield DownloadPanel(self._config_path)
@@ -196,6 +225,16 @@ class DownloaderApp(App):
         return self.query_one(SettingsPanel).value(key)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
+        idx = int(event.item.id.split("-")[1])
+        self.show_section(_SECTIONS[idx])
+
+    def on_list_view_highlighted(
+        self, event: ListView.Highlighted
+    ) -> None:
+        # Switch on arrow-key navigation too, not only Enter/click —
+        # otherwise the highlight moves but content stays stale.
+        if event.item is None or event.item.id is None:
+            return
         idx = int(event.item.id.split("-")[1])
         self.show_section(_SECTIONS[idx])
 
