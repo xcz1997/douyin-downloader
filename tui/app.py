@@ -12,6 +12,7 @@ from textual.widgets import ListItem, ListView, Label, Static
 
 from tui.panels.download import DownloadPanel
 from tui.panels.settings import SettingsPanel
+from tui.panels.subtitle import SubtitlePanel
 from tui.widgets import LogPane, StatusBar
 
 _SECTIONS = ["下载", "字幕", "登录", "设置"]
@@ -54,7 +55,7 @@ class DownloaderApp(App):
                 with Vertical(id="content"):
                     yield SettingsPanel(self._config_path)
                     yield DownloadPanel(self._config_path)
-                    yield Static("字幕（Phase 3）", id="panel-subtitle")
+                    yield SubtitlePanel()
                     yield Static("登录（Phase 4）", id="panel-login")
             yield LogPane()
             yield StatusBar()
