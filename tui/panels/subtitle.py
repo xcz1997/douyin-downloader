@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Checkbox, Input, Label, Static
 
 _SOURCES = ["track", "ocr", "asr"]
@@ -54,17 +54,30 @@ class SubtitlePanel(Static):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Input(placeholder="视频文件或目录路径", id="sub-path")
-            for s in _SOURCES:
-                yield Checkbox(s, value=(s == "ocr"), id=f"sub-src-{s}")
-            yield Input(value="0.6b", id="sub-asr-model")
-            yield Label("OCR 抽帧间隔（秒）", id="sub-ocr-interval-label")
-            yield Input(value="0.5", id="sub-ocr-interval")
-            yield Label("OCR 相似度阈值（0-1）", id="sub-ocr-similarity-label")
-            yield Input(value="0.7", id="sub-ocr-similarity")
-            yield Button("开始提取", id="sub-start", variant="primary")
-            yield Button("停止", id="sub-stop")
-            yield Label("", id="sub-msg")
+            with Vertical(classes="card") as g_in:
+                g_in.border_title = "输入"
+                yield Input(placeholder="视频文件或目录路径",
+                            id="sub-path")
+            with Vertical(classes="card") as g_src:
+                g_src.border_title = "字幕源"
+                for s in _SOURCES:
+                    yield Checkbox(s, value=(s == "ocr"),
+                                   id=f"sub-src-{s}")
+            with Vertical(classes="card") as g_par:
+                g_par.border_title = "参数"
+                yield Label("ASR 模型")
+                yield Input(value="0.6b", id="sub-asr-model")
+                yield Label("OCR 抽帧间隔（秒）",
+                            id="sub-ocr-interval-label")
+                yield Input(value="0.5", id="sub-ocr-interval")
+                yield Label("OCR 相似度阈值（0-1）",
+                            id="sub-ocr-similarity-label")
+                yield Input(value="0.7", id="sub-ocr-similarity")
+            with Horizontal(classes="actions"):
+                yield Button("开始提取", id="sub-start",
+                             variant="primary")
+                yield Button("停止", id="sub-stop")
+            yield Label("", id="sub-msg", classes="msg")
 
     def _dispatch(self, path: str, sources: list[str],
                   asr_model: str) -> None:

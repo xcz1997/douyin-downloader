@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Checkbox, Input, Label, RadioButton, RadioSet, Static
 
 from core.config import ConfigLoader
@@ -59,17 +59,23 @@ class DownloadPanel(Static):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            with RadioSet(id="dl-source"):
-                yield RadioButton("config.yml", value=True, id="src-config")
-                yield RadioButton("手动输入 URL", id="src-manual")
-            yield Input(placeholder="https://v.douyin.com/...",
-                        id="dl-url")
-            yield Input(placeholder=self._concurrency_placeholder(),
-                        id="dl-concurrency")
-            yield Checkbox("同时提取字幕", id="dl-subtitle")
-            yield Button("开始下载", id="dl-start", variant="primary")
-            yield Button("停止", id="dl-stop")
-            yield Label("", id="dl-msg")
+            with Vertical(classes="card") as g_src:
+                g_src.border_title = "链接来源"
+                with RadioSet(id="dl-source"):
+                    yield RadioButton("config.yml", value=True,
+                                      id="src-config")
+                    yield RadioButton("手动输入 URL", id="src-manual")
+                yield Input(placeholder="https://v.douyin.com/...",
+                            id="dl-url")
+            with Vertical(classes="card") as g_opt:
+                g_opt.border_title = "选项"
+                yield Input(placeholder=self._concurrency_placeholder(),
+                            id="dl-concurrency")
+                yield Checkbox("同时提取字幕", id="dl-subtitle")
+            with Horizontal(classes="actions"):
+                yield Button("开始下载", id="dl-start", variant="primary")
+                yield Button("停止", id="dl-stop")
+            yield Label("", id="dl-msg", classes="msg")
 
     async def start_download(
         self,

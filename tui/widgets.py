@@ -11,6 +11,7 @@ class LogPane(RichLog):
     def __init__(self) -> None:
         super().__init__(highlight=False, markup=True, wrap=True,
                           id="logpane")
+        self.border_title = "日志 / 进度"
 
 
 class StatusBar(Static):

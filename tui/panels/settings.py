@@ -7,7 +7,7 @@ from typing import Any
 from pathlib import Path
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Checkbox, Input, Label, Static
 
 import yaml
@@ -126,49 +126,56 @@ class SettingsPanel(Static):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            for key, label, _ in _FIELDS:
-                yield Label(label)
-                yield Input(value=self._values.get(key, ""),
-                            id=f"set-{key}")
-            # subtitle.enabled (bool → Checkbox)
-            yield Label("字幕启用")
-            yield Checkbox(
-                "启用字幕",
-                value=self._values.get("subtitle_enabled", False),
-                id="set-subtitle-enabled",
-            )
-            # subtitle.sources (list → comma string)
-            yield Label("字幕来源（逗号分隔，如 track,ocr,asr）")
-            yield Input(
-                value=self._values.get("subtitle_sources", ""),
-                id="set-subtitle-sources",
-            )
-            # subtitle.asr.model
-            yield Label("ASR 模型（如 0.6b / 1.7b）")
-            yield Input(
-                value=self._values.get("subtitle_asr_model", ""),
-                id="set-subtitle-asr-model",
-            )
-            # subtitle.ocr.interval
-            yield Label("OCR 截帧间隔（秒，如 0.5）")
-            yield Input(
-                value=self._values.get("subtitle_ocr_interval", ""),
-                id="set-subtitle-ocr-interval",
-            )
-            # subtitle.ocr.similarity
-            yield Label("OCR 相似度阈值（0-1，如 0.7）")
-            yield Input(
-                value=self._values.get("subtitle_ocr_similarity", ""),
-                id="set-subtitle-ocr-similarity",
-            )
-            # xhs.profile_dir
-            yield Label("XHS 浏览器 profile 目录")
-            yield Input(
-                value=self._values.get("xhs_profile_dir", ""),
-                id="set-xhs-profile-dir",
-            )
-            yield Button("保存", id="settings-save", variant="primary")
-            yield Label("", id="settings-msg")
+            with Vertical(classes="card") as g_dl:
+                g_dl.border_title = "下载设置"
+                for key, label, _ in _FIELDS:
+                    yield Label(label)
+                    yield Input(value=self._values.get(key, ""),
+                                id=f"set-{key}")
+            with Vertical(classes="card") as g_sub:
+                g_sub.border_title = "字幕设置"
+                # subtitle.enabled (bool → Checkbox)
+                yield Checkbox(
+                    "启用字幕",
+                    value=self._values.get("subtitle_enabled", False),
+                    id="set-subtitle-enabled",
+                )
+                # subtitle.sources (list → comma string)
+                yield Label("字幕来源（逗号分隔，如 track,ocr,asr）")
+                yield Input(
+                    value=self._values.get("subtitle_sources", ""),
+                    id="set-subtitle-sources",
+                )
+                # subtitle.asr.model
+                yield Label("ASR 模型（如 0.6b / 1.7b）")
+                yield Input(
+                    value=self._values.get("subtitle_asr_model", ""),
+                    id="set-subtitle-asr-model",
+                )
+                # subtitle.ocr.interval
+                yield Label("OCR 截帧间隔（秒，如 0.5）")
+                yield Input(
+                    value=self._values.get("subtitle_ocr_interval", ""),
+                    id="set-subtitle-ocr-interval",
+                )
+                # subtitle.ocr.similarity
+                yield Label("OCR 相似度阈值（0-1，如 0.7）")
+                yield Input(
+                    value=self._values.get("subtitle_ocr_similarity", ""),
+                    id="set-subtitle-ocr-similarity",
+                )
+            with Vertical(classes="card") as g_xhs:
+                g_xhs.border_title = "小红书"
+                # xhs.profile_dir
+                yield Label("XHS 浏览器 profile 目录")
+                yield Input(
+                    value=self._values.get("xhs_profile_dir", ""),
+                    id="set-xhs-profile-dir",
+                )
+            with Horizontal(classes="actions"):
+                yield Button("保存", id="settings-save",
+                             variant="primary")
+            yield Label("", id="settings-msg", classes="msg")
 
     def _build_subtitle_overlay(self) -> dict:
         """Build the subtitle sub-dict from form values (for deep-merge)."""

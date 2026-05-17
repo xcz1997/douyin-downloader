@@ -41,11 +41,13 @@ class LoginPanel(Static):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Button("抖音扫码登录 (CloakBrowser)",
-                         id="login-douyin", variant="primary")
-            yield Button("XHS 持久 profile 登录",
-                         id="login-xhs", variant="primary")
-            yield Label("", id="login-msg")
+            with Vertical(classes="card") as g:
+                g.border_title = "登录方式"
+                yield Button("抖音扫码登录 (CloakBrowser)",
+                             id="login-douyin", variant="primary")
+                yield Button("XHS 持久 profile 登录",
+                             id="login-xhs", variant="primary")
+            yield Label("", id="login-msg", classes="msg")
 
     def _log(self, line: str) -> None:
         from tui.widgets import LogPane
