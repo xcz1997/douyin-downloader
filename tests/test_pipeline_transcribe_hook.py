@@ -29,6 +29,15 @@ def test_run_transcribe_noop_when_none():
     asyncio.run(p._run_transcribe(_result(["/x"])))  # 不抛即可
 
 
+def test_run_transcribe_swallows_exception():
+    p = DownloadPipeline.__new__(DownloadPipeline)
+    p._transcriber = SimpleNamespace(
+        transcribe_dir=lambda d: (_ for _ in ()).throw(RuntimeError("boom")))
+    p._log = SimpleNamespace(warn=lambda *a, **kw: None)
+    import asyncio
+    asyncio.run(p._run_transcribe(_result(["/x"])))  # 不抛即可
+
+
 def test_run_transcribe_skips_when_no_media():
     calls = []
     p = DownloadPipeline.__new__(DownloadPipeline)

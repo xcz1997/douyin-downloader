@@ -3,9 +3,10 @@
 from core.transcribe.client import VLMClient, VLMError
 from core.transcribe.runner import (
     ImageTranscriber, build_image_transcriber, build_transcribe_spec,
+    find_note_dirs,
 )
 
 __all__ = [
     "VLMClient", "VLMError", "ImageTranscriber",
-    "build_image_transcriber", "build_transcribe_spec",
+    "build_image_transcriber", "build_transcribe_spec", "find_note_dirs",
 ]

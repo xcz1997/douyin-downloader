@@ -95,6 +95,13 @@ def test_build_factory_returns_none_when_auto_off():
         TranscribeConfig(enabled=True, auto_after_download=False)) is None
 
 
+def test_build_factory_returns_none_when_key_missing(monkeypatch):
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    cfg = TranscribeConfig(enabled=True, auto_after_download=True,
+                           api_key_env="DASHSCOPE_API_KEY")
+    assert build_image_transcriber(cfg) is None  # 不抛异常
+
+
 def test_max_images_logs_warning(tmp_path, caplog):
     import logging
     d = _make_note(tmp_path, imgs=5)

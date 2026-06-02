@@ -9,26 +9,10 @@
 import argparse
 import os
 import sys
-from pathlib import Path
 
 from core.config import ConfigLoader
 from core.transcribe.client import VLMClient, VLMError
-from core.transcribe.runner import ImageTranscriber, find_data_json
-
-
-def find_note_dirs(path: str) -> list[Path]:
-    """找出含 *_data.json 的笔记目录。给定目录自身命中则只返回自身，
-    否则递归找子目录。"""
-    p = Path(path)
-    if not p.is_dir():
-        return []
-    if find_data_json(p) is not None:
-        return [p]
-    dirs = []
-    for dj in sorted(p.rglob("*_data.json")):
-        if dj.parent not in dirs:
-            dirs.append(dj.parent)
-    return dirs
+from core.transcribe.runner import ImageTranscriber, find_note_dirs  # noqa: F401
 
 
 def main() -> None:

@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core.models import TranscribeConfig
-from core.transcribe.client import VLMClient
+from core.transcribe.client import VLMClient, VLMError
 from core.transcribe.prompt import build_prompt
 
 log = logging.getLogger("transcribe")
@@ -105,6 +105,21 @@ def build_transcribe_spec(path: str) -> dict:
     return {"path": path.strip()}
 
 
+def find_note_dirs(path: str) -> list[Path]:
+    """找出含 *_data.json 的笔记目录。给定目录自身命中则只返回自身，
+    否则递归找所有含 data.json 的子目录。"""
+    p = Path(path)
+    if not p.is_dir():
+        return []
+    if find_data_json(p) is not None:
+        return [p]
+    seen: list[Path] = []
+    for dj in sorted(p.rglob("*_data.json")):
+        if dj.parent not in seen:
+            seen.append(dj.parent)
+    return seen
+
+
 def build_image_transcriber(config: TranscribeConfig):
     """工厂：未启用返回 None；否则按配置建好 client 的 ImageTranscriber。
 
@@ -114,8 +129,14 @@ def build_image_transcriber(config: TranscribeConfig):
     if not config.enabled or not config.auto_after_download:
         return None
     api_key = os.environ.get(config.api_key_env, "")
-    client = VLMClient(
-        base_url=config.base_url, model=config.model, api_key=api_key,
-        timeout=config.timeout, retry=config.retry,
-    )
+    try:
+        client = VLMClient(
+            base_url=config.base_url, model=config.model, api_key=api_key,
+            timeout=config.timeout, retry=config.retry,
+        )
+    except VLMError as exc:
+        log.warning(
+            "自动转录已启用但客户端初始化失败（下载不受影响）: %s", exc
+        )
+        return None
     return ImageTranscriber(client, config)

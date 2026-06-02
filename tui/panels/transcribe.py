@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -68,7 +67,7 @@ class TranscribePanel(Static):
                 from core.config import ConfigLoader
                 from core.transcribe.client import VLMClient, VLMError
                 from core.transcribe.runner import (
-                    ImageTranscriber, find_data_json,
+                    ImageTranscriber, find_note_dirs,
                 )
                 cfg = ConfigLoader("config.yml").load().transcribe
                 if overwrite:
@@ -85,12 +84,7 @@ class TranscribePanel(Static):
                         log.write, f"[red]转录启动失败: {exc}[/red]")
                     return
                 transcriber = ImageTranscriber(client, cfg)
-                p = Path(path)
-                if find_data_json(p) is not None:
-                    dirs = [p]
-                else:
-                    dirs = sorted({dj.parent
-                                   for dj in p.rglob("*_data.json")})
+                dirs = find_note_dirs(path)
                 if not dirs:
                     self.app.call_from_thread(
                         log.write, f"[yellow]未找到笔记目录: {path}[/yellow]")
@@ -104,6 +98,8 @@ class TranscribePanel(Static):
                     except Exception as exc:  # noqa: BLE001
                         self.app.call_from_thread(
                             log.write, f"[red]{d.name} 失败: {exc}[/red]")
+                self.app.call_from_thread(
+                    lambda: self.query_one("#tr-msg", Label).update("转录完成"))
             except Exception as exc:  # noqa: BLE001
                 self.app.call_from_thread(
                     log.write, f"[red]转录初始化失败: {exc}[/red]")
