@@ -147,12 +147,15 @@ transcribe:
   auto_after_download: true        # 下载图文笔记后自动转录
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
   model: "qwen-vl-max"             # 任意 OpenAI-compatible vision 模型
-  api_key_env: "DASHSCOPE_API_KEY" # key 从该环境变量读，不写进配置文件
+  api_key_env: "DASHSCOPE_API_KEY" # 留空 api_key 时，从该环境变量读 key
+  api_key: ""                      # 直接填则存入配置（优先于环境变量）
   max_images: 0                    # 单笔记最多转录张数，0=不限
   overwrite: false                 # 已存在文字稿则跳过（幂等）
 ```
 
-**模型接口：** 走 OpenAI-compatible vision 协议，`base_url` / `model` 可换任意兼容服务（通义千问 VL、GPT-4o、智谱、本地 vLLM 等）。API key 从 `api_key_env` 指定的环境变量读取，不落盘到配置文件。
+**模型接口：** 走 OpenAI-compatible vision 协议，`base_url` / `model` 可换任意兼容服务（通义千问 VL、GPT-4o、智谱、本地 vLLM 等）。
+
+**API key 三种配置方式**（优先级从高到低）：① TUI「设置」面板的「图片转录」区直接填写并保存（密码框隐藏显示）；② config.yml 的 `transcribe.api_key` 直接写值；③ 留空 `api_key`，从 `api_key_env` 指定的环境变量读取（不落盘）。`model` / `base_url`（API endpoint）同样可在设置面板配置并持久化。
 
 **输出格式：** 每个图文笔记目录生成一份 `文字稿_<作者>.md`，含关键信息（作者/发布/互动/话题）、作者正文文案、逐图识别转录。
 

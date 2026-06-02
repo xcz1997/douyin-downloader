@@ -4,6 +4,7 @@ from pathlib import Path
 from core.models import TranscribeConfig
 from core.transcribe.runner import (
     ImageTranscriber, build_image_transcriber, find_images, find_data_json,
+    resolve_api_key,
 )
 
 
@@ -110,3 +111,21 @@ def test_max_images_logs_warning(tmp_path, caplog):
         t.transcribe_dir(d)
     assert any("max_images" in r.message or "仅转录前" in r.message
                for r in caplog.records)
+
+
+def test_resolve_api_key_prefers_config(monkeypatch):
+    monkeypatch.setenv("MY_ENV", "env-val")
+    cfg = TranscribeConfig(api_key="direct", api_key_env="MY_ENV")
+    assert resolve_api_key(cfg) == "direct"
+
+
+def test_resolve_api_key_falls_back_to_env(monkeypatch):
+    monkeypatch.setenv("MY_ENV", "env-val")
+    cfg = TranscribeConfig(api_key="", api_key_env="MY_ENV")
+    assert resolve_api_key(cfg) == "env-val"
+
+
+def test_resolve_api_key_empty_when_neither(monkeypatch):
+    monkeypatch.delenv("MY_ENV", raising=False)
+    cfg = TranscribeConfig(api_key="", api_key_env="MY_ENV")
+    assert resolve_api_key(cfg) == ""

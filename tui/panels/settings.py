@@ -73,6 +73,13 @@ class SettingsPanel(Static):
                 "subtitle_ocr_interval": cfg.subtitle.ocr_interval,
                 "subtitle_ocr_similarity": cfg.subtitle.ocr_similarity,
                 "xhs_profile_dir": cfg.xhs.profile_dir,
+                "transcribe_enabled": cfg.transcribe.enabled,
+                "transcribe_auto": cfg.transcribe.auto_after_download,
+                "transcribe_base_url": cfg.transcribe.base_url,
+                "transcribe_model": cfg.transcribe.model,
+                "transcribe_api_key": cfg.transcribe.api_key,
+                "transcribe_max_images": cfg.transcribe.max_images,
+                "transcribe_overwrite": cfg.transcribe.overwrite,
             }
         except Exception:
             fb = {
@@ -85,12 +92,21 @@ class SettingsPanel(Static):
                 "subtitle_ocr_interval": 0.5,
                 "subtitle_ocr_similarity": 0.7,
                 "xhs_profile_dir": "",
+                "transcribe_enabled": False,
+                "transcribe_auto": False,
+                "transcribe_base_url":
+                    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "transcribe_model": "qwen-vl-max",
+                "transcribe_api_key": "",
+                "transcribe_max_images": 0,
+                "transcribe_overwrite": False,
             }
 
         _sub = raw.get("subtitle", {}) or {}
         _sub_asr = _sub.get("asr", {}) or {}
         _sub_ocr = _sub.get("ocr", {}) or {}
         _xhs = raw.get("xhs", {}) or {}
+        _tr = raw.get("transcribe", {}) or {}
 
         self._values = {
             "save_path": str(raw.get("save_path", fb["save_path"])),
@@ -117,6 +133,28 @@ class SettingsPanel(Static):
             # xhs nested fields
             "xhs_profile_dir": str(
                 _xhs.get("profile_dir", fb["xhs_profile_dir"]) or ""
+            ),
+            # transcribe nested fields
+            "transcribe_enabled": bool(
+                _tr.get("enabled", fb["transcribe_enabled"])
+            ),
+            "transcribe_auto": bool(
+                _tr.get("auto_after_download", fb["transcribe_auto"])
+            ),
+            "transcribe_base_url": str(
+                _tr.get("base_url", fb["transcribe_base_url"])
+            ),
+            "transcribe_model": str(
+                _tr.get("model", fb["transcribe_model"])
+            ),
+            "transcribe_api_key": str(
+                _tr.get("api_key", fb["transcribe_api_key"]) or ""
+            ),
+            "transcribe_max_images": str(
+                _tr.get("max_images", fb["transcribe_max_images"])
+            ),
+            "transcribe_overwrite": bool(
+                _tr.get("overwrite", fb["transcribe_overwrite"])
             ),
         }
 
@@ -172,6 +210,44 @@ class SettingsPanel(Static):
                     value=self._values.get("xhs_profile_dir", ""),
                     id="set-xhs-profile-dir",
                 )
+            with Vertical(classes="card") as g_tr:
+                g_tr.border_title = "图片转录"
+                yield Checkbox(
+                    "启用图片转录",
+                    value=self._values.get("transcribe_enabled", False),
+                    id="set-transcribe-enabled",
+                )
+                yield Checkbox(
+                    "下载图文笔记后自动转录",
+                    value=self._values.get("transcribe_auto", False),
+                    id="set-transcribe-auto",
+                )
+                yield Label("API 地址（OpenAI 兼容 endpoint）")
+                yield Input(
+                    value=self._values.get("transcribe_base_url", ""),
+                    id="set-transcribe-base-url",
+                )
+                yield Label("模型名")
+                yield Input(
+                    value=self._values.get("transcribe_model", ""),
+                    id="set-transcribe-model",
+                )
+                yield Label("API Key（直接填则存入配置；留空走环境变量）")
+                yield Input(
+                    value=self._values.get("transcribe_api_key", ""),
+                    password=True,
+                    id="set-transcribe-api-key",
+                )
+                yield Label("单笔记最多转录张数（0=不限）")
+                yield Input(
+                    value=self._values.get("transcribe_max_images", ""),
+                    id="set-transcribe-max-images",
+                )
+                yield Checkbox(
+                    "覆盖重跑（默认已存在则跳过）",
+                    value=self._values.get("transcribe_overwrite", False),
+                    id="set-transcribe-overwrite",
+                )
             with Horizontal(classes="actions"):
                 yield Button("保存", id="settings-save",
                              variant="primary")
@@ -201,6 +277,25 @@ class SettingsPanel(Static):
                     self.query_one("#set-subtitle-ocr-similarity", Input).value
                 ),
             },
+        }
+
+    def _build_transcribe_overlay(self) -> dict:
+        """Build the transcribe sub-dict from form values (for deep-merge)."""
+        return {
+            "enabled":
+                self.query_one("#set-transcribe-enabled", Checkbox).value,
+            "auto_after_download":
+                self.query_one("#set-transcribe-auto", Checkbox).value,
+            "base_url":
+                self.query_one("#set-transcribe-base-url", Input).value,
+            "model": self.query_one("#set-transcribe-model", Input).value,
+            "api_key":
+                self.query_one("#set-transcribe-api-key", Input).value,
+            "max_images": int(
+                self.query_one("#set-transcribe-max-images", Input).value
+            ),
+            "overwrite":
+                self.query_one("#set-transcribe-overwrite", Checkbox).value,
         }
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -239,6 +334,14 @@ class SettingsPanel(Static):
                 {"profile_dir": self.query_one(
                     "#set-xhs-profile-dir", Input
                 ).value},
+            )
+
+            # transcribe sub-block: deep-merge existing + form values
+            existing_tr = raw.get("transcribe", {}) or {}
+            if not isinstance(existing_tr, dict):
+                existing_tr = {}
+            updates["transcribe"] = _deep_merge(
+                existing_tr, self._build_transcribe_overlay()
             )
 
             save_config_fields(self._config_path, updates)

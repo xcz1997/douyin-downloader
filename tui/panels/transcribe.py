@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Checkbox, Input, Label, Static
@@ -67,14 +65,14 @@ class TranscribePanel(Static):
                 from core.config import ConfigLoader
                 from core.transcribe.client import VLMClient, VLMError
                 from core.transcribe.runner import (
-                    ImageTranscriber, find_note_dirs,
+                    ImageTranscriber, find_note_dirs, resolve_api_key,
                 )
                 cfg = ConfigLoader("config.yml").load().transcribe
                 if overwrite:
                     cfg.overwrite = True
                 if model:
                     cfg.model = model
-                api_key = os.environ.get(cfg.api_key_env, "")
+                api_key = resolve_api_key(cfg)
                 try:
                     client = VLMClient(
                         base_url=cfg.base_url, model=cfg.model,

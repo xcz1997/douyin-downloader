@@ -265,3 +265,77 @@ async def test_settings_existing_fields_still_work(tmp_path):
 
     data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
     assert data["save_path"] == "./new"
+
+
+# ---------------------------------------------------------------------------
+# 7. Transcribe nested fields round-trip + read-out
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_settings_transcribe_roundtrip(tmp_path):
+    """编辑图片转录字段写入正确 yaml 路径，且保留未触碰的 sibling。"""
+    cfg = tmp_path / "c.yml"
+    cfg.write_text(
+        "links: []\n"
+        "transcribe:\n"
+        "  enabled: false\n"
+        "  base_url: old-url\n"
+        "  model: old-model\n"
+        "  api_key: ''\n"
+        "  max_images: 0\n"
+        "  sibling_keep: 1\n",  # 不在表单里的 sibling，必须保留
+        encoding="utf-8",
+    )
+    app = DownloaderApp(config_path=str(cfg))
+    async with app.run_test() as pilot:
+        app.show_section("设置")
+        await pilot.pause()
+        from textual.widgets import Input, Checkbox, Button
+        app.query_one("#set-transcribe-enabled", Checkbox).value = True
+        app.query_one("#set-transcribe-auto", Checkbox).value = True
+        app.query_one("#set-transcribe-base-url", Input).value = "http://new/v1"
+        app.query_one("#set-transcribe-model", Input).value = "qwen-vl-max"
+        app.query_one("#set-transcribe-api-key", Input).value = "sk-secret"
+        app.query_one("#set-transcribe-max-images", Input).value = "5"
+        app.query_one("#settings-save", Button).press()
+        await pilot.pause()
+
+    data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+    assert data["transcribe"]["enabled"] is True
+    assert data["transcribe"]["auto_after_download"] is True
+    assert data["transcribe"]["base_url"] == "http://new/v1"
+    assert data["transcribe"]["model"] == "qwen-vl-max"
+    assert data["transcribe"]["api_key"] == "sk-secret"
+    assert data["transcribe"]["max_images"] == 5
+    # sibling 保留（deep-merge proof）
+    assert data["transcribe"]["sibling_keep"] == 1
+
+
+@pytest.mark.asyncio
+async def test_settings_reads_existing_transcribe_values(tmp_path):
+    """启动时把已有 transcribe 值读进 widget。"""
+    cfg = tmp_path / "c.yml"
+    cfg.write_text(
+        "links: []\n"
+        "transcribe:\n"
+        "  enabled: true\n"
+        "  base_url: http://x/v1\n"
+        "  model: my-model\n"
+        "  api_key: sk-abc\n"
+        "  max_images: 3\n",
+        encoding="utf-8",
+    )
+    app = DownloaderApp(config_path=str(cfg))
+    async with app.run_test() as pilot:
+        app.show_section("设置")
+        await pilot.pause()
+        from textual.widgets import Input, Checkbox
+        assert app.query_one("#set-transcribe-enabled", Checkbox).value is True
+        assert app.query_one(
+            "#set-transcribe-base-url", Input).value == "http://x/v1"
+        assert app.query_one(
+            "#set-transcribe-model", Input).value == "my-model"
+        assert app.query_one(
+            "#set-transcribe-api-key", Input).value == "sk-abc"
+        assert app.query_one(
+            "#set-transcribe-max-images", Input).value == "3"

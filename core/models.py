@@ -25,6 +25,7 @@ class TranscribeConfig:
     base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     model: str = "qwen-vl-max"
     api_key_env: str = "DASHSCOPE_API_KEY"
+    api_key: str = ""            # 直接配置的 key（优先）；留空则回退 api_key_env 环境变量
     max_images: int = 0          # 0 = 不限
     overwrite: bool = False      # 幂等：False=已存在跳过
     timeout: int = 60

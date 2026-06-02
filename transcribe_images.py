@@ -7,12 +7,13 @@
 """
 
 import argparse
-import os
 import sys
 
 from core.config import ConfigLoader
 from core.transcribe.client import VLMClient, VLMError
-from core.transcribe.runner import ImageTranscriber, find_note_dirs  # noqa: F401
+from core.transcribe.runner import (  # noqa: F401
+    ImageTranscriber, find_note_dirs, resolve_api_key,
+)
 
 
 def main() -> None:
@@ -29,7 +30,7 @@ def main() -> None:
     if args.model:
         cfg.model = args.model
 
-    api_key = os.environ.get(cfg.api_key_env, "")
+    api_key = resolve_api_key(cfg)
     try:
         client = VLMClient(base_url=cfg.base_url, model=cfg.model,
                            api_key=api_key, timeout=cfg.timeout,

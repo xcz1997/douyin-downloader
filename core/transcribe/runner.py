@@ -120,6 +120,11 @@ def find_note_dirs(path: str) -> list[Path]:
     return seen
 
 
+def resolve_api_key(config: TranscribeConfig) -> str:
+    """取 API key：config.api_key 优先，留空则回退 api_key_env 指定的环境变量。"""
+    return config.api_key or os.environ.get(config.api_key_env, "")
+
+
 def build_image_transcriber(config: TranscribeConfig):
     """工厂：未启用返回 None；否则按配置建好 client 的 ImageTranscriber。
 
@@ -128,7 +133,7 @@ def build_image_transcriber(config: TranscribeConfig):
     """
     if not config.enabled or not config.auto_after_download:
         return None
-    api_key = os.environ.get(config.api_key_env, "")
+    api_key = resolve_api_key(config)
     try:
         client = VLMClient(
             base_url=config.base_url, model=config.model, api_key=api_key,

@@ -42,3 +42,14 @@ def test_transcribe_parsed_from_yaml(tmp_path):
     assert t.overwrite is True
     assert t.timeout == 30
     assert t.retry == 1
+
+
+def test_transcribe_api_key_default_and_parsed(tmp_path):
+    # 默认空（走环境变量）
+    cfg = ConfigLoader(_write(tmp_path, {"links": ["x"]})).load()
+    assert cfg.transcribe.api_key == ""
+    # 显式配置直接存值
+    cfg2 = ConfigLoader(_write(tmp_path, {
+        "links": ["x"], "transcribe": {"api_key": "sk-direct"},
+    })).load()
+    assert cfg2.transcribe.api_key == "sk-direct"
