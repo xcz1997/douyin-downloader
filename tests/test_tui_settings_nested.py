@@ -141,7 +141,7 @@ async def test_settings_missing_config_shows_defaults(tmp_path):
         from textual.widgets import Checkbox, Input
 
         # App must have started (nav labels present)
-        assert app.nav_labels() == ["下载", "字幕", "登录", "设置"]
+        assert app.nav_labels() == ["下载", "字幕", "转录", "登录", "设置"]
 
         # New fields show defaults (enabled=False, sources=default, etc.)
         assert app.query_one("#set-subtitle-enabled", Checkbox).value is False

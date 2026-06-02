@@ -4,13 +4,13 @@ from tui.app import DownloaderApp
 
 
 @pytest.mark.asyncio
-async def test_app_boots_and_has_four_nav_sections(tmp_path):
+async def test_app_boots_and_has_five_nav_sections(tmp_path):
     cfg = tmp_path / "c.yml"
     cfg.write_text("links: []\nsave_path: ./x\n", encoding="utf-8")
     app = DownloaderApp(config_path=str(cfg))
     async with app.run_test() as pilot:
         labels = app.nav_labels()
-        assert labels == ["下载", "字幕", "登录", "设置"]
+        assert labels == ["下载", "字幕", "转录", "登录", "设置"]
         await pilot.pause()
 
 
@@ -22,7 +22,7 @@ async def test_app_boots_with_missing_config(tmp_path):
     missing = tmp_path / "nope.yml"
     app = DownloaderApp(config_path=str(missing))
     async with app.run_test() as pilot:
-        assert app.nav_labels() == ["下载", "字幕", "登录", "设置"]
+        assert app.nav_labels() == ["下载", "字幕", "转录", "登录", "设置"]
         await pilot.pause()
 
 

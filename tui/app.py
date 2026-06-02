@@ -16,6 +16,7 @@ from tui.panels.download import DownloadPanel
 from tui.panels.login import LoginPanel
 from tui.panels.settings import SettingsPanel
 from tui.panels.subtitle import SubtitlePanel
+from tui.panels.transcribe import TranscribePanel
 from tui.widgets import LogPane, StatusBar
 
 
@@ -48,17 +49,18 @@ class QuitConfirmScreen(ModalScreen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "quit-confirm")
 
-_SECTIONS = ["下载", "字幕", "登录", "设置"]
+_SECTIONS = ["下载", "字幕", "转录", "登录", "设置"]
 
 # VSCode-activity-bar style icons (Nerd Font, FontAwesome-classic
 # codepoints — present in every Nerd Font patch). Shown above the
 # label; falls back to tofu boxes only if no Nerd Font is installed.
-_NAV_ICONS = [chr(0xF019), chr(0xF0F6), chr(0xF090), chr(0xF013)]
+_NAV_ICONS = [chr(0xF019), chr(0xF0F6), chr(0xF02D), chr(0xF090), chr(0xF013)]
 
 # Textual IDs must be ASCII-only — map section names to stable ASCII IDs.
 _SECTION_ID: dict[str, str] = {
     "下载": "panel-download",
     "字幕": "panel-subtitle",
+    "转录": "panel-transcribe",
     "登录": "panel-login",
     "设置": "panel-settings",
 }
@@ -205,6 +207,7 @@ class DownloaderApp(App):
                     yield SettingsPanel(self._config_path)
                     yield DownloadPanel(self._config_path)
                     yield SubtitlePanel()
+                    yield TranscribePanel()
                     yield LoginPanel()
             yield LogPane()
             yield StatusBar()
