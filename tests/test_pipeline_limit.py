@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.models import DownloadResult, DownloadTask
+from core.models import DownloadResult, DownloadTask, TranscribeConfig
 from core.pipeline import DownloadPipeline
 from core.platform import ContentRef, ListPage, MediaAsset, MediaItem
 
@@ -50,6 +50,7 @@ def _result(success: bool, media: int) -> DownloadResult:
 def _make_pipeline(engine, config_number):
     config = MagicMock()
     config.number = config_number
+    config.transcribe = TranscribeConfig()  # disabled by default; keeps build_image_transcriber safe
 
     tracer = MagicMock()
     span_ctx = MagicMock()

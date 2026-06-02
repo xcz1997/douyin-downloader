@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.errors import CookieExpiredError
+from core.models import TranscribeConfig
 from core.pipeline import DownloadPipeline
 from core.platform import PlatformRegistry
 
@@ -21,6 +22,7 @@ def _stub_config(links: list[str]):
     cfg.links = links
     cfg.number = {}
     cfg.mode = []
+    cfg.transcribe = TranscribeConfig()  # disabled by default; keeps build_image_transcriber safe
     return cfg
 
 

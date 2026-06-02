@@ -20,6 +20,7 @@ from core.subtitle.ocr_source import OCRSource
 from core.subtitle.runner import SubtitleRunner
 from core.subtitle.track_source import TrackSource
 from core.tracer import Tracer
+from core.transcribe.runner import build_image_transcriber
 
 _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".webm"}
 
@@ -90,6 +91,7 @@ class DownloadPipeline:
         self._log = logger
         self._dashboard = dashboard
         self._subtitle_runner = build_subtitle_runner(config)
+        self._transcriber = build_image_transcriber(config.transcribe)
 
     async def _run_subtitles(self, result) -> None:
         if self._subtitle_runner is None:
@@ -100,6 +102,20 @@ class DownloadPipeline:
             raw = _load_raw_json(root)
             for v in _collect_video_files([root]):
                 await asyncio.to_thread(self._subtitle_runner.run, v, raw)
+
+    async def _run_transcribe(self, result) -> None:
+        """下载成功的图文笔记，自动转录（失败只告警，不影响下载）。"""
+        if self._transcriber is None:
+            return
+        if result.media_files_written <= 0:
+            return
+        for root in result.task.file_paths:
+            try:
+                await asyncio.to_thread(
+                    self._transcriber.transcribe_dir, Path(root)
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._log.warn("自动转录失败", root=str(root), error=str(exc))
 
     def _progress_cb(self, done: int, total: int, name: str) -> None:
         self._dashboard.update_bytes_progress(done, total, name)
@@ -292,6 +308,7 @@ class DownloadPipeline:
             )
         self._dashboard.clear_current_item()
         await self._run_subtitles(result)
+        await self._run_transcribe(result)
         self._dashboard.add_bytes(result.bytes_downloaded)
         task.stats["downloaded"] = 1 if result.success else 0
         self._dashboard.log_item_done(
@@ -368,6 +385,7 @@ class DownloadPipeline:
                     )
                 self._dashboard.clear_current_item()
                 await self._run_subtitles(result)
+                await self._run_transcribe(result)
                 self._dashboard.add_bytes(result.bytes_downloaded)
                 # limit counter: count notes that produced at least one real
                 # media file. result.success goes False on any partial-asset
