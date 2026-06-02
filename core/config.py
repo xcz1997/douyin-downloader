@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from core.models import AppConfig, DownloadOptions, SubtitleConfig, XHSConfig
+from core.models import AppConfig, DownloadOptions, SubtitleConfig, TranscribeConfig, XHSConfig
 
 
 # ---------------------------------------------------------------------------
@@ -37,6 +37,17 @@ _DEFAULTS: dict[str, Any] = {
         "sources": ["track", "ocr", "asr"],
         "asr": {"model": "0.6b"},
         "ocr": {"interval": 0.5, "similarity": 0.7},
+    },
+    "transcribe": {
+        "enabled": False,
+        "auto_after_download": False,
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen-vl-max",
+        "api_key_env": "DASHSCOPE_API_KEY",
+        "max_images": 0,
+        "overwrite": False,
+        "timeout": 60,
+        "retry": 2,
     },
     "xhs": {"profile_dir": ""},
 }
@@ -285,6 +296,21 @@ class ConfigLoader:
                 "asr": {"model": "0.6b"},
                 "ocr": {"interval": 0.5, "similarity": 0.7},
             },
+            # 图片转录（默认关闭；改 enabled: true 并设置环境变量
+            #   <api_key_env> 指定的 key 后生效）。走 OpenAI-compatible
+            #   vision 协议，base_url/model 可换任意兼容服务。
+            #   auto_after_download: true 时下载图文笔记后自动转录。
+            "transcribe": {
+                "enabled": False,
+                "auto_after_download": False,
+                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "model": "qwen-vl-max",
+                "api_key_env": "DASHSCOPE_API_KEY",
+                "max_images": 0,
+                "overwrite": False,
+                "timeout": 60,
+                "retry": 2,
+            },
             "xhs": {"profile_dir": ""},
         }
         with dest.open("w", encoding="utf-8") as fh:
@@ -411,6 +437,20 @@ class ConfigLoader:
             ocr_similarity=float((_sub.get("ocr", {}) or {}).get("similarity", 0.7)),
         )
 
+        # transcribe sub-block → TranscribeConfig
+        _tr = data.get("transcribe", {}) or {}
+        transcribe = TranscribeConfig(
+            enabled=bool(_tr.get("enabled", False)),
+            auto_after_download=bool(_tr.get("auto_after_download", False)),
+            base_url=str(_tr.get("base_url", TranscribeConfig.base_url)),
+            model=str(_tr.get("model", TranscribeConfig.model)),
+            api_key_env=str(_tr.get("api_key_env", TranscribeConfig.api_key_env)),
+            max_images=int(_tr.get("max_images", 0)),
+            overwrite=bool(_tr.get("overwrite", False)),
+            timeout=int(_tr.get("timeout", 60)),
+            retry=int(_tr.get("retry", 2)),
+        )
+
         # xhs sub-block → XHSConfig
         _xhs = data.get("xhs", {}) or {}
         xhs = XHSConfig(profile_dir=str(_xhs.get("profile_dir", "") or ""))
@@ -431,5 +471,6 @@ class ConfigLoader:
             retry_times=int(data.get("retry", 3)),
             log_level=str(data.get("log_level", "INFO")),
             subtitle=subtitle,
+            transcribe=transcribe,
             xhs=xhs,
         )

@@ -19,6 +19,19 @@ class SubtitleConfig:
 
 
 @dataclass
+class TranscribeConfig:
+    enabled: bool = False
+    auto_after_download: bool = False
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    model: str = "qwen-vl-max"
+    api_key_env: str = "DASHSCOPE_API_KEY"
+    max_images: int = 0          # 0 = 不限
+    overwrite: bool = False      # 幂等：False=已存在跳过
+    timeout: int = 60
+    retry: int = 2
+
+
+@dataclass
 class XHSConfig:
     profile_dir: str = ""
 
@@ -40,6 +53,7 @@ class AppConfig:
     retry_times: int
     log_level: str
     subtitle: SubtitleConfig = field(default_factory=SubtitleConfig)
+    transcribe: TranscribeConfig = field(default_factory=TranscribeConfig)
     xhs: XHSConfig = field(default_factory=XHSConfig)
 
 
