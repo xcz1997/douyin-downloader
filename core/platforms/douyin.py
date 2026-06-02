@@ -12,7 +12,7 @@ from core.platform import ContentRef, ListPage, MediaAsset, MediaItem
 
 _SHORT_URL_RE = re.compile(r"^https?://v\.douyin\.com/\w+")
 _VIDEO_RE = re.compile(r"douyin\.com/(?:share/)?video/(\d+)")
-_NOTE_RE = re.compile(r"douyin\.com/note/(\d+)")
+_NOTE_RE = re.compile(r"douyin\.com/(?:share/)?note/(\d+)")
 _USER_RE = re.compile(r"(?:sec_uid=|/user/)(MS4wLjAB[\w\-]+)")
 _MIX_RE = re.compile(r"mix_id=(\d+)|/collection/(\d+)")
 _MUSIC_RE = re.compile(r"/music/(\d+)")
