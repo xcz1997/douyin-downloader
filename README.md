@@ -136,6 +136,35 @@ python extract_text.py <视频文件或目录> --sources ocr,asr
 
 **已知限制：** 启用后字幕在每个视频下载完成后串行提取（ASR 较慢），会拖慢整体下载速度。默认关闭时无任何性能影响。
 
+### 图片转录（可选，默认关闭）
+
+把图文笔记的配图用多模态大模型（VLM）转成结构化文字稿，默认不启用，不影响正常下载。
+
+**config.yml 配置示例：**
+```yaml
+transcribe:
+  enabled: true                    # 默认 false，改为 true 才生效
+  auto_after_download: true        # 下载图文笔记后自动转录
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  model: "qwen-vl-max"             # 任意 OpenAI-compatible vision 模型
+  api_key_env: "DASHSCOPE_API_KEY" # key 从该环境变量读，不写进配置文件
+  max_images: 0                    # 单笔记最多转录张数，0=不限
+  overwrite: false                 # 已存在文字稿则跳过（幂等）
+```
+
+**模型接口：** 走 OpenAI-compatible vision 协议，`base_url` / `model` 可换任意兼容服务（通义千问 VL、GPT-4o、智谱、本地 vLLM 等）。API key 从 `api_key_env` 指定的环境变量读取，不落盘到配置文件。
+
+**输出格式：** 每个图文笔记目录生成一份 `文字稿_<作者>.md`，含关键信息（作者/发布/互动/话题）、作者正文文案、逐图识别转录。
+
+**独立运行 CLI：**
+```bash
+export DASHSCOPE_API_KEY=sk-xxx
+python transcribe_images.py <笔记目录或其父目录>          # 父目录则递归批量
+python transcribe_images.py <目录> --force --model qwen-vl-max
+```
+
+**成本提示：** 每张图一次 vision 调用，费用随图片数线性增长；`overwrite: false` 的幂等避免重复付费。
+
 ### XHS 反检测（CloakBrowser）
 
 XHS 数据抓取走 CloakBrowser（源码级 C++ 反检测，自洽原生指纹）。两种模式：
@@ -154,16 +183,16 @@ xhs:
 
 ### TUI 主界面（推荐入口）
 
-整合下载（抖音/小红书）、字幕提取、登录、设置于一个终端界面：
+整合下载（抖音/小红书）、字幕提取、图片转录、登录、设置于一个终端界面：
 
 ```bash
 pip install textual
 python tui.py            # 或 python tui.py -c config.yml
 ```
 
-左侧导航切换区块（下载 / 字幕 / 登录 / 设置），底部常驻日志/进度。TUI 与命令行
-脚本共用同一 `core/` 后端；`downloader.py` / `extract_text.py` / `xhs_login.py` /
-`cloak_douyin_login.py` 仍可单独脚本化使用，行为不变。
+左侧导航切换区块（下载 / 字幕 / 转录 / 登录 / 设置），底部常驻日志/进度。TUI 与命令行
+脚本共用同一 `core/` 后端；`downloader.py` / `extract_text.py` / `transcribe_images.py` /
+`xhs_login.py` / `cloak_douyin_login.py` 仍可单独脚本化使用，行为不变。
 
 ### 命令行参数
 
